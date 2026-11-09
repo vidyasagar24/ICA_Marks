@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Programmes{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">Degree Programmes</h4>
+    <p class="text-muted small mb-0">Manage degree disciplines (CE, CSD, CSE, IT, etc.) (FR-03)</p>
+  </div>
+  <button type="button" class="btn btn-primary-custom btn-sm" data-bs-toggle="modal" data-bs-target="#addProgModal">
+    <i class="fa-solid fa-plus me-1"></i> Add Programme
+  </button>
+</div>
+
+<div class="card card-custom">
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Programme Name</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in programmes %}
+          <tr>
+            <td class="fw-bold text-primary">{{ p.code }}</td>
+            <td class="fw-semibold">{{ p.name }}</td>
+            <td class="text-muted">{{ p.description or '-' }}</td>
+            <td>
+              {% if p.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editProgModal{{ p.id }}">
+                <i class="fa-solid fa-pen-to-square me-1"></i> Edit
+              </button>
+
+              <!-- Edit Modal -->
+              <div class="modal fade text-start" id="editProgModal{{ p.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <form method="POST" action="{{ url_for('admin.edit_programme', id=p.id) }}">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h6 class="modal-title fw-bold">Edit Programme {{ p.code }}</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Programme Name</label>
+                          <input type="text" class="form-control" name="name" value="{{ p.name }}" required>
+                        </div>
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Description</label>
+                          <input type="text" class="form-control" name="description" value="{{ p.description or '' }}">
+                        </div>
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" name="is_active" id="act{{ p.id }}" {% if p.is_active %}checked{% endif %}>
+                          <label class="form-check-label small" for="act{{ p.id }}">Active Programme</label>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary-custom">Update</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add Modal -->
+<div class="modal fade" id="addProgModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" action="{{ url_for('admin.programmes') }}">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-layer-group text-primary me-2"></i> Add Degree Programme</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-muted">Programme Code</label>
+            <input type="text" class="form-control" name="code" placeholder="e.g. CE, CSE, CSD, IT" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-muted">Programme Title</label>
+            <input type="text" class="form-control" name="name" placeholder="e.g. Computer Science and Engineering" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-muted">Description / Notes</label>
+            <textarea class="form-control" name="description" rows="2" placeholder="Optional details..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary-custom">Save Programme</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

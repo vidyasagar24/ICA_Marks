@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+{% block title %}Students Master{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">Student Master Registry</h4>
+    <p class="text-muted small mb-0">Cohort enrollment, Excel bulk import, section transfers, and semester promotion (FR-05)</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('admin.download_student_template') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="fa-solid fa-download me-1"></i> Excel Template
+    </a>
+    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#importExcelModal">
+      <i class="fa-solid fa-file-excel me-1"></i> Bulk Import
+    </button>
+    <button type="button" class="btn btn-primary-custom btn-sm" data-bs-toggle="modal" data-bs-target="#addStudentModal">
+      <i class="fa-solid fa-user-plus me-1"></i> Register Student
+    </button>
+  </div>
+</div>
+
+<!-- Filters & Search Bar -->
+<div class="filter-bar mb-4">
+  <form method="GET" action="{{ url_for('admin.students') }}" class="row g-2 align-items-center">
+    <div class="col-md-3">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+        <input type="text" name="search" class="form-control" placeholder="Search Reg No or Name..." value="{{ search }}">
+      </div>
+    </div>
+    <div class="col-md-2">
+      <select name="programme_id" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">All Programmes</option>
+        {% for p in programmes %}
+          <option value="{{ p.id }}" {% if selected_filters.prog_id == p.id %}selected{% endif %}>{{ p.code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <select name="academic_year_id" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">All Academic Years</option>
+        {% for y in academic_years %}
+          <option value="{{ y.id }}" {% if selected_filters.year_id == y.id %}selected{% endif %}>AY {{ y.year_code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <select name="semester_id" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">All Semesters</option>
+        {% for s in semesters %}
+          <option value="{{ s.id }}" {% if selected_filters.sem_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <select name="section_id" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">All Sections</option>
+        {% for sec in sections %}
+          <option value="{{ sec.id }}" {% if selected_filters.sec_id == sec.id %}selected{% endif %}>{{ sec.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-1">
+      <button type="submit" class="btn btn-primary-custom btn-sm w-100">Filter</button>
+    </div>
+  </form>
+</div>
+
+<div class="card card-custom">
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Register No.</th>
+          <th>Student Name</th>
+          <th>Programme</th>
+          <th>Academic Year</th>
+          <th>Semester</th>
+          <th>Section</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in pagination.items %}
+          <tr>
+            <td class="fw-bold font-monospace text-primary">{{ s.register_number }}</td>
+            <td>
+              <div class="fw-semibold">{{ s.student_name }}</div>
+              <small class="text-muted">{{ s.email or '-' }}</small>
+            </td>
+            <td><span class="badge bg-secondary-subtle text-secondary">{{ s.programme.code }}</span></td>
+            <td>AY {{ s.academic_year.year_code }}</td>
+            <td>{{ s.current_semester.name }}</td>
+            <td><span class="badge bg-primary-subtle text-primary">Sec {{ s.section.name }}</span></td>
+            <td>
+              {% if s.status == 'Active' %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <!-- Academic Report PDF -->
+                <a href="{{ url_for('reports.export_student_pdf', student_id=s.id) }}" class="btn btn-outline-secondary" title="Download Grade Card PDF">
+                  <i class="fa-solid fa-file-pdf text-danger"></i>
+                </a>
+                <!-- Transfer Section Modal Button -->
+                <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#transferModal{{ s.id }}" title="Transfer Section">
+                  <i class="fa-solid fa-arrow-right-arrow-left"></i>
+                </button>
+                <!-- Promote Semester Modal Button -->
+                <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#promoteModal{{ s.id }}" title="Promote Semester">
+                  <i class="fa-solid fa-graduation-cap"></i>
+                </button>
+              </div>
+
+              <!-- Transfer Section Modal -->
+              <div class="modal fade text-start" id="transferModal{{ s.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <form method="POST" action="{{ url_for('admin.students') }}">
+                    <input type="hidden" name="action" value="transfer_section">
+                    <input type="hidden" name="student_id" value="{{ s.id }}">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h6 class="modal-title fw-bold">Transfer Section - {{ s.student_name }}</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <p class="small text-muted">Currently enrolled in <b>{{ s.programme.code }} {{ s.current_semester.name }} Section {{ s.section.name }}</b>.</p>
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Target New Section</label>
+                          <select name="new_section_id" class="form-select" required>
+                            {% for sec in sections if sec.programme_id == s.programme_id and sec.semester_id == s.current_semester_id %}
+                              <option value="{{ sec.id }}" {% if sec.id == s.section_id %}selected{% endif %}>
+                                Section {{ sec.name }} (AY {{ sec.academic_year.year_code }})
+                              </option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary-custom">Execute Transfer</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Promote Semester Modal -->
+              <div class="modal fade text-start" id="promoteModal{{ s.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <form method="POST" action="{{ url_for('admin.students') }}">
+                    <input type="hidden" name="action" value="promote_semester">
+                    <input type="hidden" name="student_id" value="{{ s.id }}">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h6 class="modal-title fw-bold">Promote Student - {{ s.student_name }}</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <p class="small text-muted">Current: <b>{{ s.current_semester.name }} (Sec {{ s.section.name }})</b>.</p>
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Target New Semester</label>
+                          <select name="new_semester_id" class="form-select" required>
+                            {% for sem in semesters %}
+                              <option value="{{ sem.id }}" {% if sem.number == s.current_semester.number + 1 %}selected{% endif %}>
+                                {{ sem.name }} (Sem {{ sem.number }})
+                              </option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Target Section</label>
+                          <select name="new_section_id" class="form-select" required>
+                            {% for sec in sections if sec.programme_id == s.programme_id %}
+                              <option value="{{ sec.id }}">{{ sec.display_name }} (AY {{ sec.academic_year.year_code }})</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">Confirm Promotion</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="text-center py-4 text-muted">No students matching criteria found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination Controls -->
+  {% if pagination.pages > 1 %}
+    <div class="card-footer bg-white d-flex justify-content-between align-items-center py-2">
+      <small class="text-muted">Showing page {{ pagination.page }} of {{ pagination.pages }} ({{ pagination.total }} students)</small>
+      <nav>
+        <ul class="pagination pagination-sm mb-0">
+          {% for p in pagination.iter_pages() %}
+            {% if p %}
+              <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('admin.students', page=p, search=search, programme_id=selected_filters.prog_id, academic_year_id=selected_filters.year_id, semester_id=selected_filters.sem_id, section_id=selected_filters.sec_id) }}">{{ p }}</a>
+              </li>
+            {% else %}
+              <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      </nav>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Add Single Student Modal -->
+<div class="modal fade" id="addStudentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" action="{{ url_for('admin.students') }}">
+      <input type="hidden" name="action" value="add">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-user-plus text-primary me-2"></i> Register Individual Student</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Register Number</label>
+              <input type="text" class="form-control font-monospace" name="register_number" placeholder="e.g. 2026CE010" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Student Full Name</label>
+              <input type="text" class="form-control" name="student_name" placeholder="Full Name" required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-muted">Email (Optional)</label>
+            <input type="email" class="form-control" name="email" placeholder="student@university.edu">
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Academic Year</label>
+              <select name="academic_year_id" id="cascade_year" class="form-select" required>
+                {% for y in academic_years %}
+                  <option value="{{ y.id }}">AY {{ y.year_code }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Programme</label>
+              <select name="programme_id" id="cascade_programme" class="form-select" required>
+                {% for p in programmes %}
+                  <option value="{{ p.id }}">{{ p.code }} - {{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Semester</label>
+              <select name="semester_id" id="cascade_sem" class="form-select" required>
+                {% for s in semesters %}
+                  <option value="{{ s.id }}">{{ s.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Section</label>
+              <select name="section_id" id="cascade_section" class="form-select" required>
+                {% for sec in sections %}
+                  <option value="{{ sec.id }}">{{ sec.display_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary-custom">Register Student</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Bulk Import Modal -->
+<div class="modal fade" id="importExcelModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" action="{{ url_for('admin.students') }}" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="import_excel">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-file-excel text-success me-2"></i> Bulk Student Import</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-3">Upload an Excel (.xlsx) or CSV file with <code>Register Number</code>, <code>Student Name</code>, and optional <code>Email</code>.</p>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-muted">Select Target Class Section</label>
+            <select name="section_id" class="form-select" required>
+              {% for sec in sections %}
+                <option value="{{ sec.id }}">{{ sec.display_name }} (AY {{ sec.academic_year.year_code }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-4">
+              <label class="form-label small fw-semibold text-muted">Programme</label>
+              <select name="programme_id" class="form-select form-select-sm" required>
+                {% for p in programmes %}
+                  <option value="{{ p.id }}">{{ p.code }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold text-muted">Year</label>
+              <select name="academic_year_id" class="form-select form-select-sm" required>
+                {% for y in academic_years %}
+                  <option value="{{ y.id }}">AY {{ y.year_code }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold text-muted">Semester</label>
+              <select name="semester_id" class="form-select form-select-sm" required>
+                {% for s in semesters %}
+                  <option value="{{ s.id }}">{{ s.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-muted">Spreadsheet File (.xlsx, .xls, .csv)</label>
+            <input type="file" class="form-control" name="file" accept=".xlsx,.xls,.csv" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success">Import Students</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

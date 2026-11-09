@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+{% block title %}Academic Performance Analytics{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">Academic Analytics & Performance Insights</h4>
+    <p class="text-muted small mb-0">Four-dimensional graphical analysis: Section-wise, Faculty-wise, Subject-wise, Student-wise (FR-14)</p>
+  </div>
+</div>
+
+<!-- Dimension Selector Tabs -->
+<ul class="nav nav-pills mb-4" id="analyticsTabs" role="tablist">
+  <li class="nav-item">
+    <button class="nav-link active" id="section-tab" data-bs-toggle="pill" data-bs-target="#section-panel" type="button">
+      <i class="fa-solid fa-chart-column me-1"></i> Section-Wise Analysis
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" id="subject-tab" data-bs-toggle="pill" data-bs-target="#subject-panel" type="button">
+      <i class="fa-solid fa-book me-1"></i> Subject-Wise Analysis
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" id="faculty-tab" data-bs-toggle="pill" data-bs-target="#faculty-panel" type="button">
+      <i class="fa-solid fa-chalkboard-user me-1"></i> Faculty-Wise Analysis
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content" id="analyticsTabContent">
+  <!-- SECTION-WISE PANEL -->
+  <div class="tab-pane fade show active" id="section-panel" role="tabpanel">
+    <!-- Allocation Selector Form -->
+    <div class="filter-bar mb-4">
+      <form method="GET" action="{{ url_for('reports.analytics') }}" class="row g-2 align-items-center">
+        <div class="col-md-9">
+          <label class="form-label small fw-semibold text-muted mb-1">Select Subject & Section Allocation</label>
+          <select name="mapping_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for m in mappings %}
+              <option value="{{ m.id }}" {% if selected_mapping_id == m.id %}selected{% endif %}>
+                {{ m.subject.subject_code }} - {{ m.subject.subject_name }} ({{ m.programme.code }} Sem {{ m.semester.number }} Sec {{ m.section.name }}) - {{ m.faculty.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+          {% if selected_mapping_id %}
+            <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping_id, format='pdf') }}" class="btn btn-outline-danger btn-sm w-100">
+              <i class="fa-solid fa-file-pdf me-1"></i> Export PDF Report
+            </a>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+
+    {% if section_data %}
+      <!-- Assessment Statistics Table -->
+      <div class="card card-custom mb-4">
+        <div class="card-header-custom">
+          <span class="fs-6"><i class="fa-solid fa-table me-2 text-primary"></i> Assessment Component Metrics & Pass Rates</span>
+          <span class="badge bg-light text-dark border">Enrolled: {{ section_data.total_enrolled }} Students</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-custom">
+            <thead>
+              <tr>
+                <th>Assessment</th>
+                <th>Max Marks</th>
+                <th>Class Average</th>
+                <th>Highest</th>
+                <th>Lowest</th>
+                <th>Below 40% Threshold</th>
+                <th>Pass Rate</th>
+                <th>Status Breakdown</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for stat in section_data.assessments %}
+                <tr>
+                  <td class="fw-bold text-primary">{{ stat.name }}</td>
+                  <td>{{ stat.max_marks|int }}</td>
+                  <td class="fw-bold">{{ stat.average }}</td>
+                  <td class="text-success fw-bold">{{ stat.highest }}</td>
+                  <td class="text-danger fw-bold">{{ stat.lowest }}</td>
+                  <td>
+                    {% if stat.below_threshold_count > 0 %}
+                      <span class="badge bg-danger-subtle text-danger">{{ stat.below_threshold_count }} students</span>
+                    {% else %}
+                      <span class="badge bg-success-subtle text-success">0</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="progress flex-grow-1" style="height: 6px;">
+                        <div class="progress-bar {% if stat.pass_percentage >= 50 %}bg-success{% elif stat.pass_percentage >= 40 %}bg-warning{% else %}bg-danger{% endif %}" style="width: {{ stat.pass_percentage }}%;"></div>
+                      </div>
+                      <small class="fw-bold">{{ stat.pass_percentage }}%</small>
+                    </div>
+                  </td>
+                  <td>
+                    <small class="text-muted">
+                      Tested: {{ stat.tested_count }} &bull; Absent: {{ stat.absent_count }} &bull; Missing: {{ stat.missing_count }}
+                    </small>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Graphical Charts Row -->
+      <div class="row g-4 mb-4">
+        <!-- Average vs Highest vs Lowest Chart -->
+        <div class="col-lg-7">
+          <div class="card card-custom h-100">
+            <div class="card-header-custom">
+              <span class="fs-6"><i class="fa-solid fa-chart-column me-2 text-primary"></i> Assessment Score Range (Avg / Max / Min)</span>
+            </div>
+            <div class="card-body p-3">
+              <canvas id="scoresBarChart" height="220"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grade Distribution Doughnut Chart -->
+        <div class="col-lg-5">
+          <div class="card card-custom h-100">
+            <div class="card-header-custom">
+              <span class="fs-6"><i class="fa-solid fa-chart-pie me-2 text-info"></i> Class Grade Distribution</span>
+            </div>
+            <div class="card-body p-3">
+              <canvas id="gradeDoughnutChart" height="220"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- SUBJECT-WISE PANEL -->
+  <div class="tab-pane fade" id="subject-panel" role="tabpanel">
+    <div class="filter-bar mb-4">
+      <form method="GET" action="{{ url_for('reports.analytics') }}" class="row g-2 align-items-center">
+        <div class="col-md-9">
+          <label class="form-label small fw-semibold text-muted mb-1">Select Subject</label>
+          <select name="subject_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">-- Choose Subject --</option>
+            {% for s in subjects %}
+              <option value="{{ s.id }}" {% if selected_subject_id == s.id %}selected{% endif %}>
+                {{ s.subject_code }} - {{ s.subject_name }} ({{ s.programme.code }} Sem {{ s.semester.number }})
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+    </div>
+
+    {% if subject_data %}
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+          <div class="kpi-card kpi-primary">
+            <div>
+              <div class="kpi-label">Test 1 Average</div>
+              <div class="kpi-value mt-1">{{ subject_data.test1_avg }}</div>
+              <small class="text-muted">Assessment 1</small>
+            </div>
+            <div class="kpi-icon-wrap bg-primary-subtle text-primary"><i class="fa-solid fa-vial"></i></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kpi-card kpi-info">
+            <div>
+              <div class="kpi-label">Test 2 Average</div>
+              <div class="kpi-value mt-1">{{ subject_data.test2_avg }}</div>
+              <small class="text-muted">Assessment 2</small>
+            </div>
+            <div class="kpi-icon-wrap bg-info-subtle text-info"><i class="fa-solid fa-vials"></i></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kpi-card kpi-purple">
+            <div>
+              <div class="kpi-label">ICA Average</div>
+              <div class="kpi-value mt-1">{{ subject_data.ica_avg }}</div>
+              <small class="text-muted">Continuous Assessment</small>
+            </div>
+            <div class="kpi-icon-wrap bg-light text-dark"><i class="fa-solid fa-clipboard-list"></i></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kpi-card kpi-success">
+            <div>
+              <div class="kpi-label">TEE Average</div>
+              <div class="kpi-value mt-1">{{ subject_data.tee_avg }}</div>
+              <small class="text-muted">Term End Examination</small>
+            </div>
+            <div class="kpi-icon-wrap bg-success-subtle text-success"><i class="fa-solid fa-award"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section Comparison Table -->
+      <div class="card card-custom mb-4">
+        <div class="card-header-custom">
+          <span class="fs-6"><i class="fa-solid fa-code-compare me-2 text-primary"></i> Section-Wise Cross Comparison for {{ subject_data.subject.subject_code }}</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-custom">
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Assigned Faculty</th>
+                <th>Students Enrolled</th>
+                <th>Class Average</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for comp in subject_data.section_comparisons %}
+                <tr>
+                  <td class="fw-bold">Section {{ comp.section_name }}</td>
+                  <td>{{ comp.faculty_name }}</td>
+                  <td>{{ comp.student_count }}</td>
+                  <td class="fw-bold text-primary">{{ comp.average_score }}</td>
+                </tr>
+              {% else %}
+                <tr><td colspan="4" class="text-center text-muted">No sections assigned for this subject.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Subject-Wise Charts Row (Blueprint Section 2.8) -->
+      <div class="row g-4 mb-4">
+        <!-- Test 1 vs Test 2 vs ICA vs TEE Comparison -->
+        <div class="col-lg-6">
+          <div class="card card-custom h-100">
+            <div class="card-header-custom">
+              <span class="fs-6"><i class="fa-solid fa-scale-balanced me-2 text-primary"></i> Assessment Component Performance (ICA vs TEE)</span>
+            </div>
+            <div class="card-body p-3">
+              <canvas id="subjectComponentsChart" height="220"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cross-Section Comparison Chart -->
+        <div class="col-lg-6">
+          <div class="card card-custom h-100">
+            <div class="card-header-custom">
+              <span class="fs-6"><i class="fa-solid fa-chart-column me-2 text-info"></i> Section-Wise Score Comparison</span>
+            </div>
+            <div class="card-body p-3">
+              <canvas id="sectionComparisonChart" height="220"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- FACULTY-WISE PANEL -->
+  <div class="tab-pane fade" id="faculty-panel" role="tabpanel">
+    {% if current_user.is_admin %}
+      <div class="filter-bar mb-4">
+        <form method="GET" action="{{ url_for('reports.analytics') }}" class="row g-2 align-items-center">
+          <div class="col-md-9">
+            <label class="form-label small fw-semibold text-muted mb-1">Select Faculty</label>
+            <select name="faculty_id" class="form-select form-select-sm" onchange="this.form.submit()">
+              {% for f in faculty_list %}
+                <option value="{{ f.id }}" {% if selected_faculty_id == f.id %}selected{% endif %}>
+                  {{ f.name }} ({{ f.faculty_id_code }} - {{ f.department }})
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </form>
+      </div>
+    {% endif %}
+
+    {% if faculty_data %}
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+          <div class="kpi-card kpi-primary">
+            <div>
+              <div class="kpi-label">Subjects</div>
+              <div class="kpi-value mt-1">{{ faculty_data.subjects_count }}</div>
+              <small class="text-muted">Courses</small>
+            </div>
+            <div class="kpi-icon-wrap bg-primary-subtle text-primary"><i class="fa-solid fa-book"></i></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kpi-card kpi-info">
+            <div>
+              <div class="kpi-label">Sections</div>
+              <div class="kpi-value mt-1">{{ faculty_data.sections_count }}</div>
+              <small class="text-muted">Classes</small>
+            </div>
+            <div class="kpi-icon-wrap bg-info-subtle text-info"><i class="fa-solid fa-shapes"></i></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kpi-card kpi-purple">
+            <div>
+              <div class="kpi-label">Students</div>
+              <div class="kpi-value mt-1">{{ faculty_data.total_students }}</div>
+              <small class="text-muted">Taught</small>
+            </div>
+            <div class="kpi-icon-wrap bg-light text-dark"><i class="fa-solid fa-users"></i></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kpi-card kpi-success">
+            <div>
+              <div class="kpi-label">Completion</div>
+              <div class="kpi-value mt-1">{{ faculty_data.overall_completion }}%</div>
+              <small class="text-success">Marks Entry</small>
+            </div>
+            <div class="kpi-icon-wrap bg-success-subtle text-success"><i class="fa-solid fa-circle-check"></i></div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  {% if section_data %}
+    // Bar Chart: Scores
+    const ctxBar = document.getElementById('scoresBarChart');
+    if (ctxBar) {
+      new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+          labels: [{% for a in section_data.assessments %}'{{ a.name }}',{% endfor %}],
+          datasets: [
+            {
+              label: 'Average Score',
+              data: [{% for a in section_data.assessments %}{{ a.average }},{% endfor %}],
+              backgroundColor: 'rgba(37, 99, 235, 0.85)',
+              borderRadius: 6
+            },
+            {
+              label: 'Highest Score',
+              data: [{% for a in section_data.assessments %}{{ a.highest }},{% endfor %}],
+              backgroundColor: 'rgba(16, 185, 129, 0.85)',
+              borderRadius: 6
+            },
+            {
+              label: 'Lowest Score',
+              data: [{% for a in section_data.assessments %}{{ a.lowest }},{% endfor %}],
+              backgroundColor: 'rgba(239, 68, 68, 0.85)',
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top' }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Doughnut Chart: Grades
+    const ctxPie = document.getElementById('gradeDoughnutChart');
+    if (ctxPie) {
+      new Chart(ctxPie, {
+        type: 'doughnut',
+        data: {
+          labels: [{% for k in section_data.grade_distribution.keys() %}'{{ k }}',{% endfor %}],
+          datasets: [{
+            data: [{% for v in section_data.grade_distribution.values() %}{{ v }},{% endfor %}],
+            backgroundColor: [
+              '#10b981', // Distinction
+              '#3b82f6', // First Class
+              '#06b6d4', // Second Class
+              '#f59e0b', // Pass
+              '#ef4444'  // Fail
+            ]
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    }
+  {% endif %}
+
+  {% if subject_data %}
+    // Assessment Components Chart (Test 1 vs Test 2 vs ICA vs TEE)
+    const ctxComp = document.getElementById('subjectComponentsChart');
+    if (ctxComp) {
+      new Chart(ctxComp, {
+        type: 'bar',
+        data: {
+          labels: ['Test 1 Avg', 'Test 2 Avg', 'ICA Continuous', 'TEE Final'],
+          datasets: [{
+            label: 'Average Score',
+            data: [
+              {{ subject_data.test1_avg|default(0) }},
+              {{ subject_data.test2_avg|default(0) }},
+              {{ subject_data.ica_avg|default(0) }},
+              {{ subject_data.tee_avg|default(0) }}
+            ],
+            backgroundColor: ['#3b82f6', '#06b6d4', '#8b5cf6', '#10b981'],
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    // Cross-Section Comparison Chart
+    const ctxSecComp = document.getElementById('sectionComparisonChart');
+    if (ctxSecComp) {
+      new Chart(ctxSecComp, {
+        type: 'bar',
+        data: {
+          labels: [{% for comp in subject_data.section_comparisons %}'Sec {{ comp.section_name }} ({{ comp.faculty_name }})',{% endfor %}],
+          datasets: [{
+            label: 'Section Average',
+            data: [{% for comp in subject_data.section_comparisons %}{{ comp.average_score }},{% endfor %}],
+            backgroundColor: '#0284c7',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+  {% endif %}
+});
+</script>
+{% endblock %}

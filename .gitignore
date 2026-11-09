@@ -1,0 +1,40 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Environments
+env/
+venv/
+ENV/
+.venv/
+
+# Instance and local databases
+instance/*.db
+instance/*.sqlite
+instance/*.sqlite3
+*.db
+*.sqlite3
+
+# Uploads and temporary exports
+uploads/*
+!uploads/.gitkeep
+exports/*
+!exports/.gitkeep
+
+# Logs
+*.log
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE configs
+.vscode/
+.idea/

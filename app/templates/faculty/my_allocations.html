@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}My Allocations{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">My Academic Allocations & Subjects</h4>
+    <p class="text-muted small mb-0">View assigned subjects and sections, rosters, and enter marks (FR-08, FR-10)</p>
+  </div>
+</div>
+
+<div class="card card-custom">
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Year</th>
+          <th>Subject Code & Title</th>
+          <th>Class Section</th>
+          <th>Enrolled Students</th>
+          <th>Status</th>
+          <th class="text-end">Operations</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in allocations %}
+          <tr>
+            <td><span class="badge bg-light text-dark border">AY {{ a.mapping.academic_year.year_code }}</span></td>
+            <td>
+              <div class="fw-bold text-primary">{{ a.mapping.subject.subject_code }}</div>
+              <small class="text-muted">{{ a.mapping.subject.subject_name }}</small>
+            </td>
+            <td>
+              <span class="fw-semibold">{{ a.mapping.programme.code }}</span> &bull; Sem {{ a.mapping.semester.number }} &bull;
+              <span class="badge bg-primary-subtle text-primary">Section {{ a.mapping.section.name }}</span>
+            </td>
+            <td>
+              <a href="{{ url_for('faculty.view_students', mapping_id=a.mapping.id) }}" class="btn btn-sm btn-outline-secondary py-0 px-2" title="View Student List">
+                <i class="fa-solid fa-users me-1"></i> {{ a.student_count }} Students
+              </a>
+            </td>
+            <td>
+              <span class="badge bg-{{ a.badge }}">{{ a.status }}</span>
+              {% if a.submission and a.submission.review_comments %}
+                <i class="fa-solid fa-circle-info ms-1 text-info" title="{{ a.submission.review_comments }}"></i>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <!-- Marks Entry Table -->
+                <a href="{{ url_for('faculty.marks_entry', mapping_id=a.mapping.id) }}" class="btn btn-primary-custom" title="Enter Marks">
+                  <i class="fa-solid fa-pen-to-square me-1"></i> Marks Entry
+                </a>
+                <!-- Excel Upload -->
+                <a href="{{ url_for('faculty.upload_marks', mapping_id=a.mapping.id) }}" class="btn btn-outline-success" title="Excel Upload">
+                  <i class="fa-solid fa-file-excel"></i>
+                </a>
+                <!-- Download Template -->
+                <a href="{{ url_for('faculty.download_template', mapping_id=a.mapping.id) }}" class="btn btn-outline-secondary" title="Download Template (.xlsx)">
+                  <i class="fa-solid fa-download"></i>
+                </a>
+                <!-- Export Marks -->
+                <a href="{{ url_for('faculty.export_marks', mapping_id=a.mapping.id, format='pdf') }}" class="btn btn-outline-danger" title="Download PDF Report">
+                  <i class="fa-solid fa-file-pdf"></i>
+                </a>
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-4 text-muted">
+              You do not have any active teaching allocations.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

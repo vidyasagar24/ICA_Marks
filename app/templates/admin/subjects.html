@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Subject Master{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">University Subjects Master</h4>
+    <p class="text-muted small mb-0">Manage course catalog, credits, and ICA/TEE maximum mark limits (FR-07)</p>
+  </div>
+  <button type="button" class="btn btn-primary-custom btn-sm" data-bs-toggle="modal" data-bs-target="#addSubjectModal">
+    <i class="fa-solid fa-plus me-1"></i> Add Subject
+  </button>
+</div>
+
+<div class="card card-custom">
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Subject Code</th>
+          <th>Subject Title</th>
+          <th>Programme</th>
+          <th>Semester</th>
+          <th>Credits</th>
+          <th>ICA Max</th>
+          <th>TEE Max</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in subjects %}
+          <tr>
+            <td class="fw-bold font-monospace text-primary">{{ s.subject_code }}</td>
+            <td class="fw-semibold">{{ s.subject_name }}</td>
+            <td><span class="badge bg-secondary-subtle text-secondary">{{ s.programme.code }}</span></td>
+            <td>{{ s.semester.name }}</td>
+            <td><span class="badge bg-light text-dark border">{{ s.credits }}</span></td>
+            <td><span class="badge bg-info-subtle text-info fw-bold">{{ s.ica_max|int }}</span></td>
+            <td><span class="badge bg-primary-subtle text-primary fw-bold">{{ s.tee_max|int }}</span></td>
+            <td>
+              {% if s.status == 'Active' %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editSubjModal{{ s.id }}">
+                <i class="fa-solid fa-pen-to-square me-1"></i> Edit
+              </button>
+
+              <!-- Edit Modal -->
+              <div class="modal fade text-start" id="editSubjModal{{ s.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <form method="POST" action="{{ url_for('admin.edit_subject', id=s.id) }}">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h6 class="modal-title fw-bold">Edit Subject {{ s.subject_code }}</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Subject Title</label>
+                          <input type="text" class="form-control" name="subject_name" value="{{ s.subject_name }}" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                          <div class="col-4">
+                            <label class="form-label small fw-semibold text-muted">Credits</label>
+                            <input type="number" class="form-control" name="credits" value="{{ s.credits }}" min="1" max="10" required>
+                          </div>
+                          <div class="col-4">
+                            <label class="form-label small fw-semibold text-muted">ICA Maximum</label>
+                            <input type="number" step="0.5" class="form-control" name="ica_max" value="{{ s.ica_max }}" required>
+                          </div>
+                          <div class="col-4">
+                            <label class="form-label small fw-semibold text-muted">TEE Maximum</label>
+                            <input type="number" step="0.5" class="form-control" name="tee_max" value="{{ s.tee_max }}" required>
+                          </div>
+                        </div>
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Status</label>
+                          <select name="status" class="form-select">
+                            <option value="Active" {% if s.status == 'Active' %}selected{% endif %}>Active</option>
+                            <option value="Inactive" {% if s.status == 'Inactive' %}selected{% endif %}>Inactive</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary-custom">Save Changes</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add Modal -->
+<div class="modal fade" id="addSubjectModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" action="{{ url_for('admin.subjects') }}">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-book-bookmark text-primary me-2"></i> Add University Subject</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-3">
+            <div class="col-4">
+              <label class="form-label small fw-semibold text-muted">Subject Code</label>
+              <input type="text" class="form-control font-monospace" name="subject_code" placeholder="e.g. CS201" required>
+            </div>
+            <div class="col-8">
+              <label class="form-label small fw-semibold text-muted">Subject Title</label>
+              <input type="text" class="form-control" name="subject_name" placeholder="e.g. Data Structures" required>
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Programme</label>
+              <select name="programme_id" class="form-select" required>
+                {% for p in programmes %}
+                  <option value="{{ p.id }}">{{ p.code }} - {{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Semester</label>
+              <select name="semester_id" class="form-select" required>
+                {% for s in semesters %}
+                  <option value="{{ s.id }}">{{ s.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-4">
+              <label class="form-label small fw-semibold text-muted">Credits</label>
+              <input type="number" class="form-control" name="credits" value="3" min="1" max="10" required>
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold text-muted">ICA Max</label>
+              <input type="number" step="0.5" class="form-control" name="ica_max" value="50" required>
+            </div>
+            <div class="col-4">
+              <label class="form-label small fw-semibold text-muted">TEE Max</label>
+              <input type="number" step="0.5" class="form-control" name="tee_max" value="100" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary-custom">Save Subject</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

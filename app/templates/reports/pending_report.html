@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Pending Marks Report{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">Faculty Pending Marks Monitoring Report</h4>
+    <p class="text-muted small mb-0">Audit faculty marks entry completion rates and outstanding administrative submissions (FR-15)</p>
+  </div>
+</div>
+
+<div class="card card-custom">
+  <div class="card-header-custom d-flex justify-content-between align-items-center">
+    <span class="fs-6"><i class="fa-solid fa-clock-rotate-left text-warning me-2"></i> Outstanding Marks Entry & Unsubmitted Allocations</span>
+    <span class="badge bg-warning-subtle text-warning border">{{ pending_list|length }} Classes Pending</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Class Section</th>
+          <th>Faculty Responsible</th>
+          <th>Submission State</th>
+          <th>Slots Filled / Total Expected</th>
+          <th>Completion (%)</th>
+          <th class="text-end">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in pending_list %}
+          <tr>
+            <td>
+              <div class="fw-bold text-primary">{{ item.subject.subject_code }}</div>
+              <small class="text-muted">{{ item.subject.subject_name }}</small>
+            </td>
+            <td>
+              <span class="fw-semibold">{{ item.mapping.programme.code }}</span> &bull; Sem {{ item.mapping.semester.number }} &bull;
+              <span class="badge bg-primary-subtle text-primary">Sec {{ item.section.name }}</span>
+            </td>
+            <td>
+              <div class="fw-semibold">{{ item.faculty.name }}</div>
+              <small class="text-muted font-monospace">{{ item.faculty.faculty_id_code }} &bull; {{ item.faculty.email }}</small>
+            </td>
+            <td>
+              <span class="badge bg-{{ item.badge }}">{{ item.status }}</span>
+            </td>
+            <td>
+              <span class="fw-semibold">{{ item.filled_slots }}</span> / {{ item.expected_slots }}
+            </td>
+            <td style="min-width: 140px;">
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height: 6px;">
+                  <div class="progress-bar bg-warning" style="width: {{ item.completion_pct }}%;"></div>
+                </div>
+                <small class="fw-bold text-muted">{{ item.completion_pct }}%</small>
+              </div>
+            </td>
+            <td class="text-end">
+              <a href="{{ url_for('reports.consolidated', mapping_id=item.mapping.id) }}" class="btn btn-sm btn-outline-info" title="Inspect Marks Sheet">
+                <i class="fa-regular fa-eye me-1"></i> Inspect
+              </a>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" class="text-center py-4 text-muted">
+              <i class="fa-solid fa-circle-check text-success fs-3 d-block mb-2"></i>
+              Excellent! All faculty have completed and submitted marks for their active allocations.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

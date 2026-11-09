@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Class Student Roster{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1 small">
+        <li class="breadcrumb-item"><a href="{{ url_for('faculty.my_allocations') }}">My Allocations</a></li>
+        <li class="breadcrumb-item active">Class Roster</li>
+      </ol>
+    </nav>
+    <h4 class="fw-bold mb-1 text-dark">Class Student Roster</h4>
+    <p class="text-muted small mb-0">
+      {{ mapping.subject.subject_code }} - {{ mapping.subject.subject_name }} &bull;
+      {{ mapping.programme.code }} Sem {{ mapping.semester.number }} Sec {{ mapping.section.name }} ({{ students|length }} Students)
+    </p>
+  </div>
+  <a href="{{ url_for('faculty.marks_entry', mapping_id=mapping.id) }}" class="btn btn-primary-custom btn-sm">
+    <i class="fa-solid fa-pen-to-square me-1"></i> Proceed to Marks Entry
+  </a>
+</div>
+
+<div class="card card-custom">
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Register Number</th>
+          <th>Student Name</th>
+          <th>Email Address</th>
+          <th>Programme & Semester</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in students %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td class="fw-bold font-monospace text-primary">{{ s.register_number }}</td>
+            <td class="fw-semibold">{{ s.student_name }}</td>
+            <td>{{ s.email or '-' }}</td>
+            <td>{{ s.programme.code }} - {{ s.current_semester.name }}</td>
+            <td>
+              {% if s.status == 'Active' %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-4 text-muted">No students currently enrolled in this section.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

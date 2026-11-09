@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Upload Marks Spreadsheet{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1 small">
+        <li class="breadcrumb-item"><a href="{{ url_for('faculty.my_allocations') }}">My Allocations</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('faculty.marks_entry', mapping_id=mapping.id) }}">Marks Entry</a></li>
+        <li class="breadcrumb-item active">Excel Upload</li>
+      </ol>
+    </nav>
+    <h4 class="fw-bold mb-1 text-dark">Spreadsheet Marks Import (FR-11)</h4>
+    <p class="text-muted small mb-0">
+      {{ mapping.subject.subject_code }} - {{ mapping.subject.subject_name }} &bull;
+      {{ mapping.programme.code }} Sem {{ mapping.semester.number }} Sec {{ mapping.section.name }}
+    </p>
+  </div>
+  <a href="{{ url_for('faculty.download_template', mapping_id=mapping.id) }}" class="btn btn-outline-primary btn-sm">
+    <i class="fa-solid fa-download me-1"></i> Download Pre-filled Template (.xlsx)
+  </a>
+</div>
+
+{% if is_locked %}
+  <div class="alert alert-warning mb-4">
+    <i class="fa-solid fa-lock me-2"></i> This subject allocation is currently locked (Status: <b>{{ submission.status }}</b>). Uploads are disabled until reopened by Admin.
+  </div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card card-custom h-100">
+      <div class="card-header-custom">
+        <span class="fs-6"><i class="fa-solid fa-cloud-arrow-up text-success me-2"></i> Upload Completed Spreadsheet</span>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('faculty.upload_marks', mapping_id=mapping.id) }}" enctype="multipart/form-data">
+          <div class="mb-4 text-center p-4 border border-2 border-dashed rounded-3 bg-light">
+            <i class="fa-solid fa-file-excel text-success fs-1 mb-3"></i>
+            <h6>Select Excel (.xlsx, .xls) or CSV File</h6>
+            <p class="text-muted small mb-3">Ensure you use the template downloaded from this portal.</p>
+            <input type="file" name="file" class="form-control" accept=".xlsx,.xls,.csv" required {% if is_locked %}disabled{% endif %}>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center">
+            <a href="{{ url_for('faculty.marks_entry', mapping_id=mapping.id) }}" class="btn btn-light border">
+              Back to Table Entry
+            </a>
+            <button type="submit" class="btn btn-success px-4" {% if is_locked %}disabled{% endif %}>
+              <i class="fa-solid fa-upload me-1"></i> Validate & Import Marks
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card card-custom h-100">
+      <div class="card-header-custom">
+        <span class="fs-6"><i class="fa-solid fa-circle-question text-info me-2"></i> Spreadsheet Import Guidelines</span>
+      </div>
+      <div class="card-body p-4">
+        <ol class="small text-secondary ps-3 mb-0" style="line-height: 1.8;">
+          <li><b>Step 1:</b> Click <b>Download Pre-filled Template</b> to get the official spreadsheet populated with your enrolled students' register numbers and names.</li>
+          <li><b>Step 2:</b> Fill marks in the respective assessment columns.
+            <ul>
+              <li>Enter numeric scores between <code>0</code> and maximum allowed marks.</li>
+              <li>Type <code>AB</code> if a student was Absent.</li>
+              <li>Type <code>EX</code> if a student is Exempted.</li>
+              <li>Leave blank if the assessment has not been conducted yet.</li>
+            </ul>
+          </li>
+          <li><b>Step 3:</b> Do not alter the <code>Register Number</code> column or delete rows, as they map directly to university student records.</li>
+          <li><b>Step 4:</b> Upload the saved spreadsheet here. The system validates all marks, detects anomalies, and saves valid entries directly to your Draft.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Marks Review & Approval{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">Faculty Marks Submissions & Approvals</h4>
+    <p class="text-muted small mb-0">Workflow Governance: Draft &rarr; Submitted &rarr; Under Review &rarr; Approved &rarr; Reopened (FR-12)</p>
+  </div>
+</div>
+
+<!-- Status Filter Tabs -->
+<ul class="nav nav-pills mb-4">
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == 'all' %}active{% endif %}" href="{{ url_for('admin.marks_review', status='all') }}">All Records</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == 'Submitted' %}active{% endif %}" href="{{ url_for('admin.marks_review', status='Submitted') }}">
+      <i class="fa-solid fa-clock me-1 text-warning"></i> Submitted / Pending
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == 'Approved' %}active{% endif %}" href="{{ url_for('admin.marks_review', status='Approved') }}">
+      <i class="fa-solid fa-check me-1 text-success"></i> Approved
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if status_filter == 'Reopened' %}active{% endif %}" href="{{ url_for('admin.marks_review', status='Reopened') }}">
+      <i class="fa-solid fa-rotate-left me-1 text-info"></i> Reopened
+    </a>
+  </li>
+</ul>
+
+<div class="card card-custom">
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Subject & Allocation</th>
+          <th>Faculty</th>
+          <th>Status</th>
+          <th>Submitted On</th>
+          <th>Reviewed By</th>
+          <th>Review Date</th>
+          <th>Comments / Notes</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sub in submissions %}
+          <tr>
+            <td>
+              <div class="fw-bold text-primary">{{ sub.mapping.subject.subject_code }} - {{ sub.mapping.subject.subject_name }}</div>
+              <small class="text-muted">{{ sub.mapping.programme.code }} Sem {{ sub.mapping.semester.number }} Sec {{ sub.mapping.section.name }} &bull; AY {{ sub.mapping.academic_year.year_code }}</small>
+            </td>
+            <td>
+              <div class="fw-semibold">{{ sub.mapping.faculty.name }}</div>
+              <small class="text-muted font-monospace">{{ sub.mapping.faculty.faculty_id_code }}</small>
+            </td>
+            <td>
+              <span class="badge bg-{{ sub.badge_class }}">{{ sub.status }}</span>
+            </td>
+            <td>
+              <small>{{ sub.submission_date.strftime('%d-%b-%Y %H:%M') if sub.submission_date else '-' }}</small>
+            </td>
+            <td>
+              <small>{{ sub.reviewed_by.username if sub.reviewed_by else '-' }}</small>
+            </td>
+            <td>
+              <small>{{ sub.review_date.strftime('%d-%b-%Y %H:%M') if sub.review_date else '-' }}</small>
+            </td>
+            <td>
+              <small class="text-muted">{{ sub.review_comments or '-' }}</small>
+            </td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <a href="{{ url_for('reports.consolidated', mapping_id=sub.mapping_id) }}" class="btn btn-outline-info" title="Inspect Marks">
+                  <i class="fa-regular fa-eye"></i>
+                </a>
+                {% if sub.status != 'Approved' %}
+                  <form method="POST" action="{{ url_for('admin.process_submission_action', id=sub.id) }}" class="d-inline">
+                    <input type="hidden" name="action" value="approve">
+                    <button type="submit" class="btn btn-outline-success" title="Approve Submission" onclick="return confirm('Approve marks submission?')">
+                      <i class="fa-solid fa-check"></i>
+                    </button>
+                  </form>
+                {% endif %}
+                <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#reopenSubModal{{ sub.id }}" title="Reopen for Correction">
+                  <i class="fa-solid fa-rotate-left"></i>
+                </button>
+              </div>
+
+              <!-- Reopen Modal -->
+              <div class="modal fade text-start" id="reopenSubModal{{ sub.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <form method="POST" action="{{ url_for('admin.process_submission_action', id=sub.id) }}">
+                    <input type="hidden" name="action" value="reopen">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h6 class="modal-title fw-bold">Authorize Corrections (Reopen Marks)</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <p class="small text-muted">Reopening this marksheet will unlock it and allow faculty to edit entries.</p>
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Feedback / Correction Instructions</label>
+                          <textarea name="comments" class="form-control" rows="3" placeholder="Explain what corrections are required..." required></textarea>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning">Confirm Reopen</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="text-center py-4 text-muted">No marks submissions found under this filter.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

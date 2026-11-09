@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}Faculty Master{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">Faculty Members Directory</h4>
+    <p class="text-muted small mb-0">Faculty profiles, account provisioning, and teaching workload monitoring (FR-06)</p>
+  </div>
+  <button type="button" class="btn btn-primary-custom btn-sm" data-bs-toggle="modal" data-bs-target="#addFacultyModal">
+    <i class="fa-solid fa-user-plus me-1"></i> Add Faculty
+  </button>
+</div>
+
+<div class="card card-custom">
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Faculty ID</th>
+          <th>Faculty Name</th>
+          <th>Department</th>
+          <th>Designation</th>
+          <th>Login Username</th>
+          <th>Workload</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in faculty_list %}
+          {% set wl = workloads.get(f.id, {}) %}
+          <tr>
+            <td class="fw-bold font-monospace text-primary">{{ f.faculty_id_code }}</td>
+            <td>
+              <div class="fw-semibold">{{ f.name }}</div>
+              <small class="text-muted">{{ f.email }}</small>
+            </td>
+            <td>{{ f.department }}</td>
+            <td>{{ f.designation }}</td>
+            <td>
+              {% if f.user_account %}
+                <span class="badge bg-light text-dark border font-monospace">{{ f.user_account.username }}</span>
+              {% else %}
+                <span class="badge bg-warning-subtle text-warning">No Login Account</span>
+              {% endif %}
+            </td>
+            <td>
+              <button type="button" class="btn btn-sm btn-outline-info py-0 px-2" data-bs-toggle="modal" data-bs-target="#workloadModal{{ f.id }}">
+                <i class="fa-solid fa-briefcase me-1"></i> {{ wl.total_allocations }} Classes ({{ wl.total_students }} Stus)
+              </button>
+            </td>
+            <td>
+              {% if f.status == 'Active' %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editFacultyModal{{ f.id }}">
+                <i class="fa-solid fa-user-pen me-1"></i> Edit
+              </button>
+
+              <!-- Edit Faculty Modal -->
+              <div class="modal fade text-start" id="editFacultyModal{{ f.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <form method="POST" action="{{ url_for('admin.edit_faculty', id=f.id) }}">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h6 class="modal-title fw-bold">Edit Faculty - {{ f.name }}</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Full Name</label>
+                          <input type="text" class="form-control" name="name" value="{{ f.name }}" required>
+                        </div>
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Email</label>
+                          <input type="email" class="form-control" name="email" value="{{ f.email }}" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                          <div class="col-6">
+                            <label class="form-label small fw-semibold text-muted">Department</label>
+                            <input type="text" class="form-control" name="department" value="{{ f.department }}" required>
+                          </div>
+                          <div class="col-6">
+                            <label class="form-label small fw-semibold text-muted">Designation</label>
+                            <input type="text" class="form-control" name="designation" value="{{ f.designation }}" required>
+                          </div>
+                        </div>
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Account Status</label>
+                          <select name="status" class="form-select">
+                            <option value="Active" {% if f.status == 'Active' %}selected{% endif %}>Active</option>
+                            <option value="Inactive" {% if f.status == 'Inactive' %}selected{% endif %}>Inactive</option>
+                          </select>
+                        </div>
+                        <div class="mb-3 border-top pt-2">
+                          <label class="form-label small fw-semibold text-muted">Reset Password (leave empty to keep current)</label>
+                          <input type="password" class="form-control" name="new_password" placeholder="Enter new password">
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary-custom">Update Profile</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Workload Modal -->
+              <div class="modal fade text-start" id="workloadModal{{ f.id }}" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h6 class="modal-title fw-bold"><i class="fa-solid fa-briefcase text-primary me-2"></i> Workload Analysis - {{ f.name }}</h6>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                      <div class="row g-3 mb-3 text-center">
+                        <div class="col-3">
+                          <div class="border rounded p-2 bg-light">
+                            <div class="small text-muted">Subjects</div>
+                            <h5 class="mb-0 fw-bold">{{ wl.subjects_count }}</h5>
+                          </div>
+                        </div>
+                        <div class="col-3">
+                          <div class="border rounded p-2 bg-light">
+                            <div class="small text-muted">Sections</div>
+                            <h5 class="mb-0 fw-bold">{{ wl.sections_count }}</h5>
+                          </div>
+                        </div>
+                        <div class="col-3">
+                          <div class="border rounded p-2 bg-light">
+                            <div class="small text-muted">Students</div>
+                            <h5 class="mb-0 fw-bold">{{ wl.total_students }}</h5>
+                          </div>
+                        </div>
+                        <div class="col-3">
+                          <div class="border rounded p-2 bg-light">
+                            <div class="small text-muted">Completion</div>
+                            <h5 class="mb-0 fw-bold text-success">{{ wl.overall_completion }}%</h5>
+                          </div>
+                        </div>
+                      </div>
+
+                      <h6 class="fw-bold mb-2">Assigned Courses & Sections:</h6>
+                      <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                          <tr>
+                            <th>Subject</th>
+                            <th>Section</th>
+                            <th>Students</th>
+                            <th>Progress</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for alloc in wl.allocations %}
+                            <tr>
+                              <td>{{ alloc.mapping.subject.subject_code }} - {{ alloc.mapping.subject.subject_name }}</td>
+                              <td>Sec {{ alloc.mapping.section.name }} (Sem {{ alloc.mapping.semester.number }})</td>
+                              <td>{{ alloc.students_count }}</td>
+                              <td>
+                                <div class="progress" style="height: 6px;">
+                                  <div class="progress-bar bg-success" style="width: {{ alloc.completion_pct }}%;"></div>
+                                </div>
+                                <small class="text-muted">{{ alloc.completion_pct }}%</small>
+                              </td>
+                              <td><span class="badge bg-{{ alloc.submission_badge }}">{{ alloc.submission_status }}</span></td>
+                            </tr>
+                          {% else %}
+                            <tr><td colspan="5" class="text-center text-muted">No allocations assigned currently.</td></tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add Faculty Modal -->
+<div class="modal fade" id="addFacultyModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" action="{{ url_for('admin.faculty') }}">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-chalkboard-user text-primary me-2"></i> Register New Faculty</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Faculty ID Code</label>
+              <input type="text" class="form-control" name="faculty_id_code" placeholder="e.g. FAC004" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Full Name</label>
+              <input type="text" class="form-control" name="name" placeholder="Prof. / Dr. ..." required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-muted">Email Address</label>
+            <input type="email" class="form-control" name="email" placeholder="faculty@university.edu" required>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Department</label>
+              <input type="text" class="form-control" name="department" placeholder="e.g. Computer Science" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Designation</label>
+              <input type="text" class="form-control" name="designation" placeholder="e.g. Assistant Professor" required>
+            </div>
+          </div>
+          <div class="row g-2 mb-3 border-top pt-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Portal Username</label>
+              <input type="text" class="form-control" name="username" placeholder="e.g. fac_code or name" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Initial Password</label>
+              <input type="password" class="form-control" name="password" placeholder="Default: Faculty@123">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary-custom">Create Faculty Account</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

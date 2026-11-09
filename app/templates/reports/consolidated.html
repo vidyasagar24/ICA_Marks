@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Consolidated Mark Sheet{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">Consolidated Class Mark Sheet</h4>
+    <p class="text-muted small mb-0">Official academic grade sheet with assessment totals and export capabilities (FR-15)</p>
+  </div>
+  {% if selected_mapping %}
+    <div class="btn-group btn-group-sm">
+      <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='xlsx') }}" class="btn btn-outline-success">
+        <i class="fa-solid fa-file-excel me-1"></i> Export Excel
+      </a>
+      <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='csv') }}" class="btn btn-outline-secondary">
+        <i class="fa-solid fa-file-csv me-1"></i> Export CSV
+      </a>
+      <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='pdf') }}" class="btn btn-outline-danger">
+        <i class="fa-solid fa-file-pdf me-1"></i> Export PDF
+      </a>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Mapping Selector Bar -->
+<div class="filter-bar mb-4">
+  <form method="GET" action="{{ url_for('reports.consolidated') }}" class="row g-2 align-items-center">
+    <div class="col-md-10">
+      <label class="form-label small fw-semibold text-muted mb-1">Select Allocation / Course</label>
+      <select name="mapping_id" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% for m in mappings %}
+          <option value="{{ m.id }}" {% if selected_mapping and selected_mapping.id == m.id %}selected{% endif %}>
+            {{ m.subject.subject_code }} - {{ m.subject.subject_name }} &bull; {{ m.programme.code }} Sem {{ m.semester.number }} Sec {{ m.section.name }} &bull; Prof. {{ m.faculty.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2 d-flex align-items-end">
+      <button type="submit" class="btn btn-primary-custom btn-sm w-100">Load Sheet</button>
+    </div>
+  </form>
+</div>
+
+{% if selected_mapping %}
+  <div class="card card-custom mb-4">
+    <div class="card-header-custom d-flex justify-content-between align-items-center">
+      <div>
+        <span class="fs-6 fw-bold text-primary">{{ selected_mapping.subject.subject_code }} - {{ selected_mapping.subject.subject_name }}</span>
+        <div class="small text-muted">
+          {{ selected_mapping.programme.name }} &bull; {{ selected_mapping.semester.name }} &bull; Section {{ selected_mapping.section.name }} &bull; Faculty: {{ selected_mapping.faculty.name }}
+        </div>
+      </div>
+      <span class="badge bg-light text-dark border">Total Students: {{ students|length }}</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-custom table-hover">
+        <thead>
+          <tr>
+            <th style="width: 45px;">#</th>
+            <th>Register Number</th>
+            <th>Student Name</th>
+            {% for ass in assessments %}
+              <th class="text-center">
+                {{ ass.assessment_name }}
+                <div class="badge bg-light text-muted border" style="font-size: 0.65rem;">Max: {{ ass.max_marks|int }}</div>
+              </th>
+            {% endfor %}
+            <th class="text-center">Total Scored</th>
+            <th class="text-center">Max Total</th>
+            <th class="text-center">Percentage</th>
+            <th class="text-center">Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for stu in students %}
+            {% set total_score = namespace(val=0.0) %}
+            {% set total_max = namespace(val=0.0) %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td class="fw-bold font-monospace text-primary">{{ stu.register_number }}</td>
+              <td class="fw-semibold">{{ stu.student_name }}</td>
+              {% for ass in assessments %}
+                {% set mk = marks_map.get((stu.id, ass.id)) %}
+                <td class="text-center">
+                  {% if mk %}
+                    {% if mk.status == 'Absent' %}
+                      <span class="text-danger fw-bold">AB</span>
+                      {% set total_max.val = total_max.val + ass.max_marks %}
+                    {% elif mk.status == 'Exempted' %}
+                      <span class="text-info fw-bold">EX</span>
+                    {% elif mk.score is not none %}
+                      <span class="fw-semibold">{{ mk.score|int if mk.score.is_integer() else mk.score }}</span>
+                      {% set total_score.val = total_score.val + mk.score %}
+                      {% set total_max.val = total_max.val + ass.max_marks %}
+                    {% else %}
+                      <span class="text-muted">-</span>
+                      {% set total_max.val = total_max.val + ass.max_marks %}
+                    {% endif %}
+                  {% else %}
+                    <span class="text-muted">-</span>
+                    {% set total_max.val = total_max.val + ass.max_marks %}
+                  {% endif %}
+                </td>
+              {% endfor %}
+              <td class="text-center fw-bold text-dark">
+                {{ total_score.val|round(1) }}
+              </td>
+              <td class="text-center text-muted">
+                {{ total_max.val|round(1) }}
+              </td>
+              <td class="text-center">
+                {% if total_max.val > 0 %}
+                  {% set pct = (total_score.val / total_max.val * 100)|round(1) %}
+                  <span class="fw-bold {% if pct >= 50 %}text-success{% elif pct >= 40 %}text-warning{% else %}text-danger{% endif %}">
+                    {{ pct }}%
+                  </span>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td class="text-center">
+                {% if total_max.val > 0 %}
+                  {% set pct = (total_score.val / total_max.val * 100) %}
+                  {% if pct >= 40 %}
+                    <span class="badge bg-success">PASS</span>
+                  {% else %}
+                    <span class="badge bg-danger">FAIL</span>
+                  {% endif %}
+                {% else %}
+                  <span class="badge bg-secondary">-</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="{{ assessments|length + 7 }}" class="text-center py-4 text-muted">
+                No student marks recorded for this section yet.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% else %}
+  <div class="alert alert-info">Please select a subject allocation from the dropdown above to view its consolidated mark sheet.</div>
+{% endif %}
+{% endblock %}

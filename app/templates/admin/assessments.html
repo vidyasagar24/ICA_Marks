@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Assessment Setup{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1 small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.mappings') }}">Mappings</a></li>
+        <li class="breadcrumb-item active">Assessment Configuration</li>
+      </ol>
+    </nav>
+    <h4 class="fw-bold mb-1 text-dark">Assessment Components & Maximum Marks (FR-09)</h4>
+    <p class="text-muted small mb-0">
+      {{ mapping.subject.subject_code }} - {{ mapping.subject.subject_name }} &bull;
+      {{ mapping.programme.code }} Sem {{ mapping.semester.number }} Sec {{ mapping.section.name }} &bull;
+      Faculty: {{ mapping.faculty.name }}
+    </p>
+  </div>
+  <button type="button" class="btn btn-primary-custom btn-sm" data-bs-toggle="modal" data-bs-target="#addAssessmentModal">
+    <i class="fa-solid fa-plus me-1"></i> Add Assessment
+  </button>
+</div>
+
+<div class="card card-custom">
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Assessment Component</th>
+          <th>Type</th>
+          <th>Maximum Marks</th>
+          <th>Weightage (%)</th>
+          <th>Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in assessments %}
+          <tr>
+            <td><span class="badge bg-light text-dark border">{{ a.order_num }}</span></td>
+            <td class="fw-bold text-primary">{{ a.assessment_name }}</td>
+            <td><span class="badge bg-secondary-subtle text-secondary">{{ a.assessment_type }}</span></td>
+            <td><span class="badge bg-info-subtle text-info fs-6 px-2">{{ a.max_marks|int if a.max_marks.is_integer() else a.max_marks }}</span></td>
+            <td>{{ a.weightage }}%</td>
+            <td>
+              {% if a.is_active %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-secondary">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editAssModal{{ a.id }}">
+                <i class="fa-solid fa-pen-to-square me-1"></i> Edit
+              </button>
+
+              <!-- Edit Modal -->
+              <div class="modal fade text-start" id="editAssModal{{ a.id }}" tabindex="-1">
+                <div class="modal-dialog">
+                  <form method="POST" action="{{ url_for('admin.manage_assessments', mapping_id=mapping.id) }}">
+                    <input type="hidden" name="action" value="edit">
+                    <input type="hidden" name="assessment_id" value="{{ a.id }}">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h6 class="modal-title fw-bold">Edit Component - {{ a.assessment_name }}</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <div class="mb-3">
+                          <label class="form-label small fw-semibold text-muted">Assessment Name</label>
+                          <input type="text" class="form-control" name="assessment_name" value="{{ a.assessment_name }}" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                          <div class="col-6">
+                            <label class="form-label small fw-semibold text-muted">Component Type</label>
+                            <select name="assessment_type" class="form-select">
+                              <option value="Test" {% if a.assessment_type == 'Test' %}selected{% endif %}>Test</option>
+                              <option value="Assignment" {% if a.assessment_type == 'Assignment' %}selected{% endif %}>Assignment</option>
+                              <option value="Quiz" {% if a.assessment_type == 'Quiz' %}selected{% endif %}>Quiz</option>
+                              <option value="Mid-Term" {% if a.assessment_type == 'Mid-Term' %}selected{% endif %}>Mid-Term Test</option>
+                              <option value="ICA" {% if a.assessment_type == 'ICA' %}selected{% endif %}>ICA (Continuous)</option>
+                              <option value="TEE" {% if a.assessment_type == 'TEE' %}selected{% endif %}>Term End Exam</option>
+                              <option value="Other" {% if a.assessment_type == 'Other' %}selected{% endif %}>Other</option>
+                            </select>
+                          </div>
+                          <div class="col-6">
+                            <label class="form-label small fw-semibold text-muted">Max Marks</label>
+                            <input type="number" step="0.5" class="form-control" name="max_marks" value="{{ a.max_marks }}" required>
+                          </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                          <div class="col-6">
+                            <label class="form-label small fw-semibold text-muted">Weightage (%)</label>
+                            <input type="number" step="0.5" class="form-control" name="weightage" value="{{ a.weightage }}">
+                          </div>
+                          <div class="col-6 d-flex align-items-center pt-4">
+                            <div class="form-check">
+                              <input class="form-check-input" type="checkbox" name="is_active" id="act{{ a.id }}" {% if a.is_active %}checked{% endif %}>
+                              <label class="form-check-label small" for="act{{ a.id }}">Active</label>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary-custom">Save Changes</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add Modal -->
+<div class="modal fade" id="addAssessmentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form method="POST" action="{{ url_for('admin.manage_assessments', mapping_id=mapping.id) }}">
+      <input type="hidden" name="action" value="add">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-plus text-primary me-2"></i> Add Assessment Component</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-muted">Assessment Name</label>
+            <input type="text" class="form-control" name="assessment_name" placeholder="e.g. Mid-Term Test or Quiz 2" required>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Component Type</label>
+              <select name="assessment_type" class="form-select">
+                <option value="Test">Test</option>
+                <option value="Assignment">Assignment</option>
+                <option value="Quiz">Quiz</option>
+                <option value="Mid-Term">Mid-Term Test</option>
+                <option value="ICA">ICA (Continuous)</option>
+                <option value="TEE">Term End Examination</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Maximum Marks</label>
+              <input type="number" step="0.5" class="form-control" name="max_marks" value="20" required>
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Display Order</label>
+              <input type="number" class="form-control" name="order_num" value="{{ assessments|length + 1 }}" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold text-muted">Weightage (%)</label>
+              <input type="number" class="form-control" name="weightage" value="100">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary-custom">Add Component</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

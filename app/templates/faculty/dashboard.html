@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Faculty Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="fw-bold mb-1 text-dark">Faculty Assessment Portal</h4>
+    <p class="text-muted small mb-0">Welcome, <b>{{ faculty.name if faculty else current_user.username }}</b> &bull; {{ faculty.department if faculty else '' }} ({{ faculty.designation if faculty else '' }})</p>
+  </div>
+  <a href="{{ url_for('faculty.my_allocations') }}" class="btn btn-primary-custom btn-sm">
+    <i class="fa-solid fa-chalkboard me-1"></i> My Teaching Allocations
+  </a>
+</div>
+
+<!-- KPI Cards (Blueprint Section 2.6) -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-card kpi-primary h-100">
+      <div>
+        <div class="kpi-label">Assigned Subjects</div>
+        <div class="kpi-value mt-1">{{ analysis.subjects_count|default(0) }}</div>
+        <small class="text-muted">Active Courses</small>
+      </div>
+      <div class="kpi-icon-wrap bg-primary-subtle text-primary">
+        <i class="fa-solid fa-book-open"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-card kpi-info h-100">
+      <div>
+        <div class="kpi-label">Assigned Sections</div>
+        <div class="kpi-value mt-1">{{ analysis.sections_count|default(0) }}</div>
+        <small class="text-muted">Total Classes</small>
+      </div>
+      <div class="kpi-icon-wrap bg-info-subtle text-info">
+        <i class="fa-solid fa-shapes"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-card kpi-purple h-100">
+      <div>
+        <div class="kpi-label">Total Students</div>
+        <div class="kpi-value mt-1">{{ analysis.total_students|default(0) }}</div>
+        <small class="text-muted">Enrolled Pupils</small>
+      </div>
+      <div class="kpi-icon-wrap bg-light text-dark">
+        <i class="fa-solid fa-user-graduate"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-card kpi-danger h-100">
+      <div>
+        <div class="kpi-label">Pending Assessments</div>
+        <div class="kpi-value mt-1">{{ analysis.pending_assessments|default(0) }}</div>
+        <small class="text-danger">Awaiting Entry</small>
+      </div>
+      <div class="kpi-icon-wrap bg-danger-subtle text-danger">
+        <i class="fa-solid fa-hourglass-start"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-card kpi-warning h-100">
+      <div>
+        <div class="kpi-label">Draft Marks</div>
+        <div class="kpi-value mt-1">{{ analysis.draft_marks_count|default(0) }}</div>
+        <small class="text-warning">In Progress</small>
+      </div>
+      <div class="kpi-icon-wrap bg-warning-subtle text-warning">
+        <i class="fa-solid fa-file-pen"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="kpi-card kpi-success h-100">
+      <div>
+        <div class="kpi-label">Submitted Marks</div>
+        <div class="kpi-value mt-1">{{ analysis.submitted_marks_count|default(0) }}</div>
+        <small class="text-success">Submitted / Approved</small>
+      </div>
+      <div class="kpi-icon-wrap bg-success-subtle text-success">
+        <i class="fa-solid fa-clipboard-check"></i>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Active Allocations Progress Table -->
+<div class="card card-custom mb-4">
+  <div class="card-header-custom">
+    <span class="fs-6"><i class="fa-solid fa-chalkboard text-primary me-2"></i> My Academic Responsibilities & Marks Completion Status</span>
+    <span class="badge bg-light text-dark border">AY {{ active_academic_year.year_code if active_academic_year else '' }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-custom">
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Programme & Section</th>
+          <th>Students</th>
+          <th>Marks Progress</th>
+          <th>Submission Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alloc in analysis.allocations %}
+          <tr>
+            <td>
+              <div class="fw-bold text-primary">{{ alloc.mapping.subject.subject_code }}</div>
+              <small class="text-muted">{{ alloc.mapping.subject.subject_name }}</small>
+            </td>
+            <td>
+              <span class="fw-semibold">{{ alloc.mapping.programme.code }}</span> &bull; Sem {{ alloc.mapping.semester.number }} &bull;
+              <span class="badge bg-primary-subtle text-primary">Sec {{ alloc.mapping.section.name }}</span>
+            </td>
+            <td><span class="badge bg-light text-dark border">{{ alloc.students_count }}</span></td>
+            <td style="min-width: 150px;">
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height: 8px;">
+                  <div class="progress-bar {% if alloc.completion_pct == 100 %}bg-success{% elif alloc.completion_pct > 0 %}bg-info{% else %}bg-secondary{% endif %}" style="width: {{ alloc.completion_pct }}%;"></div>
+                </div>
+                <small class="fw-bold text-muted">{{ alloc.completion_pct }}%</small>
+              </div>
+            </td>
+            <td>
+              <span class="badge bg-{{ alloc.submission_badge }}">{{ alloc.submission_status }}</span>
+            </td>
+            <td class="text-end">
+              <a href="{{ url_for('faculty.marks_entry', mapping_id=alloc.mapping.id) }}" class="btn btn-sm btn-primary-custom">
+                <i class="fa-solid fa-file-pen me-1"></i> Enter Marks
+              </a>
+              <a href="{{ url_for('faculty.upload_marks', mapping_id=alloc.mapping.id) }}" class="btn btn-sm btn-outline-success ms-1" title="Excel Upload">
+                <i class="fa-solid fa-file-excel"></i>
+              </a>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center py-4 text-muted">
+              No active subject allocations assigned yet. Please contact the administrator.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

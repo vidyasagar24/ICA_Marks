@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Marks Entry - {{ mapping.subject.subject_code }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1 small">
+        <li class="breadcrumb-item"><a href="{{ url_for('faculty.my_allocations') }}">My Allocations</a></li>
+        <li class="breadcrumb-item active">Marks Entry</li>
+      </ol>
+    </nav>
+    <h4 class="fw-bold mb-1 text-dark">{{ mapping.subject.subject_code }} - {{ mapping.subject.subject_name }}</h4>
+    <p class="text-muted small mb-0">
+      {{ mapping.programme.name }} ({{ mapping.programme.code }}) &bull;
+      {{ mapping.semester.name }} &bull; Section {{ mapping.section.name }} &bull;
+      AY {{ mapping.academic_year.year_code }}
+    </p>
+  </div>
+
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <!-- Status badge -->
+    {% if submission %}
+      <span class="badge bg-{{ submission.badge_class }} fs-6 py-2 px-3">
+        Status: {{ submission.status }}
+      </span>
+    {% else %}
+      <span class="badge bg-secondary fs-6 py-2 px-3">Status: Draft</span>
+    {% endif %}
+
+    <!-- Excel actions -->
+    <a href="{{ url_for('faculty.download_template', mapping_id=mapping.id) }}" class="btn btn-outline-secondary btn-sm" title="Download Excel template prefilled with students">
+      <i class="fa-solid fa-download me-1"></i> Template
+    </a>
+    <a href="{{ url_for('faculty.upload_marks', mapping_id=mapping.id) }}" class="btn btn-outline-success btn-sm" title="Upload marks from completed Excel file">
+      <i class="fa-solid fa-file-excel me-1"></i> Import Excel
+    </a>
+    <a href="{{ url_for('faculty.export_marks', mapping_id=mapping.id, format='pdf') }}" class="btn btn-outline-danger btn-sm" title="Download official marksheet PDF">
+      <i class="fa-solid fa-file-pdf me-1"></i> PDF Sheet
+    </a>
+  </div>
+</div>
+
+{% if is_locked %}
+  <div class="alert alert-warning d-flex align-items-center mb-3" role="alert">
+    <i class="fa-solid fa-lock fs-4 me-3"></i>
+    <div>
+      <strong>Marks Sheet Locked</strong>: This marks submission is currently in status <b>{{ submission.status }}</b>.
+      {% if submission.review_comments %}
+        <div class="small mt-1">Admin Note: {{ submission.review_comments }}</div>
+      {% endif %}
+      Modifications are restricted unless the administrator reopens the submission for corrections.
+    </div>
+  </div>
+{% elif submission and submission.status == 'Reopened' %}
+  <div class="alert alert-info d-flex align-items-center mb-3" role="alert">
+    <i class="fa-solid fa-rotate-left fs-4 me-3"></i>
+    <div>
+      <strong>Submission Reopened for Correction</strong>:
+      {% if submission.review_comments %}
+        <div>Note from Administrator: <i>"{{ submission.review_comments }}"</i></div>
+      {% endif %}
+      You can make the requested edits and resubmit to administrator.
+    </div>
+  </div>
+{% endif %}
+
+<!-- Interactive Marks Form -->
+<form method="POST" action="{{ url_for('faculty.marks_entry', mapping_id=mapping.id) }}" id="marksForm">
+  <div class="card card-custom mb-4">
+    <div class="card-header-custom d-flex justify-content-between align-items-center">
+      <span class="fs-6"><i class="fa-solid fa-table-cells text-primary me-2"></i> Student Assessment Roster ({{ students|length }} Students Enrolled)</span>
+      <small class="text-muted">Use <b>Arrow Keys</b> to navigate between cells &bull; Enter '<b>AB</b>' for Absent, '<b>EX</b>' for Exempted</small>
+    </div>
+    
+    <div class="table-responsive">
+      <table class="table table-custom table-hover marks-grid" id="marksEntryTable" data-mapping-id="{{ mapping.id }}" data-is-locked="{{ 'true' if is_locked else 'false' }}">
+        <thead>
+          <tr>
+            <th style="width: 45px;">#</th>
+            <th style="width: 130px; text-align: left;">Reg. Number</th>
+            <th style="text-align: left;">Student Name</th>
+            {% for ass in assessments %}
+              <th>
+                <div class="fw-bold">{{ ass.assessment_name }}</div>
+                <small class="badge bg-secondary-subtle text-secondary" style="font-size: 0.7rem;">Max: {{ ass.max_marks|int if ass.max_marks.is_integer() else ass.max_marks }}</small>
+              </th>
+            {% endfor %}
+            <th style="width: 90px;">Total</th>
+            <th style="width: 80px;">%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for stu in students %}
+            <tr data-student-id="{{ stu.id }}">
+              <td class="text-muted">{{ loop.index }}</td>
+              <td class="fw-bold font-monospace text-primary text-start">{{ stu.register_number }}</td>
+              <td class="fw-semibold text-start">{{ stu.student_name }}</td>
+              {% for ass in assessments %}
+                {% set mark_entry = marks_map.get((stu.id, ass.id)) %}
+                {% set current_val = '' %}
+                {% if mark_entry %}
+                  {% if mark_entry.status == 'Absent' %}
+                    {% set current_val = 'AB' %}
+                  {% elif mark_entry.status == 'Exempted' %}
+                    {% set current_val = 'EX' %}
+                  {% elif mark_entry.score is not none %}
+                    {% set current_val = mark_entry.score|int if mark_entry.score.is_integer() else mark_entry.score %}
+                  {% endif %}
+                {% endif %}
+                <td>
+                  <input type="text"
+                         name="mark_{{ stu.id }}_{{ ass.id }}"
+                         class="marks-input {% if current_val %}is-saved-mark{% endif %}"
+                         value="{{ current_val }}"
+                         data-max-marks="{{ ass.max_marks }}"
+                         data-student-id="{{ stu.id }}"
+                         data-assessment-id="{{ ass.id }}"
+                         autocomplete="off"
+                         placeholder="-"
+                         {% if is_locked %}disabled{% endif %}>
+                </td>
+              {% endfor %}
+              <td>
+                <span class="row-total-score fw-bold text-dark">-</span>
+              </td>
+              <td>
+                <span class="row-percentage">-</span>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="{{ assessments|length + 5 }}" class="text-center py-4 text-muted">
+                No active students enrolled in this section.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Actions Footer -->
+    {% if not is_locked %}
+      <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center py-3">
+        <div class="small text-muted d-flex align-items-center gap-3">
+          <span><span class="badge bg-success-subtle text-success border me-1">&nbsp;</span> Valid Entry</span>
+          <span><span class="badge bg-danger-subtle text-danger border me-1">&nbsp;</span> Invalid (&gt; Max)</span>
+          <span><span class="badge bg-light text-dark border me-1">AB</span> Absent</span>
+          <span><span class="badge bg-light text-dark border me-1">EX</span> Exempted</span>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="submit" name="action" value="save_draft" class="btn btn-outline-secondary px-3">
+            <i class="fa-solid fa-floppy-disk me-1"></i> Save Draft
+          </button>
+          <button type="button" class="btn btn-primary-custom px-4" data-bs-toggle="modal" data-bs-target="#confirmSubmitModal">
+            <i class="fa-solid fa-paper-plane me-1"></i> Submit to Admin
+          </button>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Submission Confirmation Modal (FR-10) -->
+  <div class="modal fade" id="confirmSubmitModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="fa-solid fa-triangle-exclamation text-warning me-2"></i> Confirm Final Marks Submission</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">Are you sure you want to finalize and submit marks for <b>{{ mapping.subject.subject_code }} (Sec {{ mapping.section.name }})</b>?</p>
+          <div class="alert alert-warning py-2 small mb-0">
+            <i class="fa-solid fa-circle-info me-1"></i> Once submitted, marks will be submitted to the Academic Administrator for formal review and locked against direct edits.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Keep Editing</button>
+          <button type="submit" name="action" value="submit_to_admin" class="btn btn-primary-custom">
+            <i class="fa-solid fa-check me-1"></i> Confirm & Submit
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/marks_entry.js') }}"></script>
+{% endblock %}
