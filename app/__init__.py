@@ -30,7 +30,10 @@ def create_app(config_class=Config):
     # Context processors
     @app.context_processor
     def inject_global_vars():
-        active_year = AcademicYear.query.filter_by(status='Active').first()
+        try:
+            active_year = AcademicYear.query.filter_by(status='Active').first()
+        except Exception:
+            active_year = None
         return {
             'active_academic_year': active_year,
             'app_title': 'Academic Assessment Management System',
@@ -47,5 +50,15 @@ def create_app(config_class=Config):
                 return redirect(url_for('admin.dashboard'))
             return redirect(url_for('faculty.dashboard'))
         return redirect(url_for('auth.login'))
+
+    # Auto-initialize database tables and seed sample data on first start if needed
+    with app.app_context():
+        try:
+            db.create_all()
+            if not User.query.first():
+                from seed_data import seed_database
+                seed_database(app=app)
+        except Exception as e:
+            app.logger.warning(f"Database auto-setup notice: {e}")
 
     return app

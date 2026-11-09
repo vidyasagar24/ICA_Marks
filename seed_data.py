@@ -6,16 +6,22 @@ from app.models import (
     Subject, FacultySubjectMapping, Assessment, Mark, Submission, AuditLog, MarksAudit
 )
 
-def seed_database():
-    app = create_app()
-    with app.app_context():
-        print("Creating database schema...")
-        db.create_all()
+def seed_database(app=None):
+    if app is None:
+        app = create_app()
+        with app.app_context():
+            _do_seed()
+    else:
+        _do_seed()
 
-        # Check if already seeded
-        if User.query.filter_by(username='admin').first():
-            print("Database already contains records. Skipping seed.")
-            return
+def _do_seed():
+    print("Creating database schema...")
+    db.create_all()
+
+    # Check if already seeded
+    if User.query.filter_by(username='admin').first():
+        print("Database already contains records. Skipping seed.")
+        return
 
         print("Seeding Academic Years (FR-02)...")
         ay1 = AcademicYear(year_code='2024-25', start_date=date(2024, 7, 1), end_date=date(2025, 6, 30), status='Archived')
