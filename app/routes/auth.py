@@ -21,7 +21,8 @@ def login():
             flash('Please enter both username and password.', 'danger')
             return render_template('auth/login.html')
 
-        user = User.query.filter_by(username=username).first()
+        from sqlalchemy import func
+        user = User.query.filter(func.lower(User.username) == username.lower()).first()
 
         if user and user.check_password(password):
             if not user.is_active:

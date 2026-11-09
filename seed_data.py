@@ -87,7 +87,17 @@ def _do_seed():
         u_fac4 = User(username='faculty_d', role='faculty', faculty_id=fac4.id, is_active=True)
         u_fac4.set_password('Faculty@123')
 
-        db.session.add_all([u_fac1, u_fac2, u_fac3, u_fac4])
+        # Alias logins for maximum convenience
+        u_fac_sharma = User(username='faculty_sharma', role='faculty', faculty_id=fac1.id, is_active=True)
+        u_fac_sharma.set_password('Faculty@123')
+
+        u_fac_amit = User(username='amit.sharma', role='faculty', faculty_id=fac1.id, is_active=True)
+        u_fac_amit.set_password('Faculty@123')
+
+        u_fac_priya = User(username='priya.patel', role='faculty', faculty_id=fac2.id, is_active=True)
+        u_fac_priya.set_password('Faculty@123')
+
+        db.session.add_all([u_fac1, u_fac2, u_fac3, u_fac4, u_fac_sharma, u_fac_amit, u_fac_priya])
         db.session.flush()
 
         print("Seeding Subjects Master (FR-07)...")

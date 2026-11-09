@@ -51,13 +51,27 @@ def create_app(config_class=Config):
             return redirect(url_for('faculty.dashboard'))
         return redirect(url_for('auth.login'))
 
-    # Auto-initialize database tables and seed sample data on first start if needed
+    # Ensure database is created and seeded before handling any request (essential for serverless Vercel)
+    @app.before_request
+    def ensure_database_initialized():
+        if not getattr(app, '_db_ready', False):
+            try:
+                db.create_all()
+                if not User.query.filter_by(username='admin').first():
+                    from seed_data import seed_database
+                    seed_database(app=app)
+                app._db_ready = True
+            except Exception as e:
+                app.logger.warning(f"Database auto-setup notice: {e}")
+
+    # Auto-initialize database tables and seed sample data on startup
     with app.app_context():
         try:
             db.create_all()
-            if not User.query.first():
+            if not User.query.filter_by(username='admin').first():
                 from seed_data import seed_database
                 seed_database(app=app)
+            app._db_ready = True
         except Exception as e:
             app.logger.warning(f"Database auto-setup notice: {e}")
 
