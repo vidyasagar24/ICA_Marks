@@ -239,6 +239,251 @@ def generate_section_marks_pdf(mapping_id):
     return buffer
 
 
+def generate_section_consolidated_pdf(section_id):
+    """
+    Generate an official consolidated grade sheet PDF for a section across all mapped subjects.
+    Page orientation: Landscape A4.
+    """
+    from app.services.analytics_service import get_section_consolidated_sheet
+    data = get_section_consolidated_sheet(section_id)
+    section = data['section']
+    mappings = data['mappings']
+    students_data = data['students_data']
+    subject_stats = data['subject_stats']
+    overall_stats = data['overall_stats']
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=25,
+        leftMargin=25,
+        topMargin=25,
+        bottomMargin=25
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=14,
+        textColor=colors.HexColor('#1B365D'),
+        alignment=1,
+        spaceAfter=3
+    )
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        textColor=colors.HexColor('#2E5B88'),
+        alignment=1,
+        spaceAfter=8
+    )
+    meta_style = ParagraphStyle(
+        'MetaStyle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8,
+        textColor=colors.HexColor('#2D3748'),
+        leading=11
+    )
+    th_style = ParagraphStyle(
+        'ThStyle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=7,
+        textColor=colors.white,
+        alignment=1
+    )
+    td_style = ParagraphStyle(
+        'TdStyle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=7,
+        alignment=1
+    )
+    td_bold = ParagraphStyle(
+        'TdBold',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=7,
+        alignment=1
+    )
+    td_left = ParagraphStyle(
+        'TdLeft',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=7,
+        alignment=0
+    )
+
+    story = []
+    story.append(Paragraph("ACADEMIC ASSESSMENT MANAGEMENT SYSTEM", title_style))
+    story.append(Paragraph("OFFICIAL CONSOLIDATED SECTION GRADE SHEET (ALL SUBJECTS)", subtitle_style))
+
+    # Meta Table
+    meta_data = [
+        [
+            Paragraph(f"<b>Programme:</b> {section.programme.name} ({section.programme.code})", meta_style),
+            Paragraph(f"<b>Semester:</b> {section.semester.name}", meta_style),
+            Paragraph(f"<b>Section:</b> {section.name}", meta_style),
+        ],
+        [
+            Paragraph(f"<b>Academic Year:</b> {section.academic_year.year_code}", meta_style),
+            Paragraph(f"<b>Total Students:</b> {overall_stats['total_students']}", meta_style),
+            Paragraph(f"<b>Class Pass Rate:</b> {overall_stats['class_pass_rate']}%", meta_style),
+        ]
+    ]
+    meta_table = Table(meta_data, colWidths=[280, 240, 240])
+    meta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 10))
+
+    # Table Headers: Tier 1 (Subject groups) & Tier 2 (ICA/TEE/Tot)
+    tier1 = [
+        Paragraph("#", th_style),
+        Paragraph("Register No", th_style),
+        Paragraph("Student Name", th_style)
+    ]
+    tier2 = [
+        Paragraph("", th_style),
+        Paragraph("", th_style),
+        Paragraph("", th_style)
+    ]
+
+    for m in mappings:
+        tier1.extend([
+            Paragraph(f"<b>{m.subject.subject_code}</b>", th_style),
+            Paragraph("", th_style),
+            Paragraph("", th_style)
+        ])
+        tier2.extend([
+            Paragraph(f"ICA ({int(m.subject.ica_max)})", th_style),
+            Paragraph(f"TEE ({int(m.subject.tee_max)})", th_style),
+            Paragraph("Total", th_style)
+        ])
+
+    tier1.extend([
+        Paragraph("Grand Tot", th_style),
+        Paragraph("Overall %", th_style),
+        Paragraph("Result", th_style)
+    ])
+    tier2.extend([
+        Paragraph("", th_style),
+        Paragraph("", th_style),
+        Paragraph("", th_style)
+    ])
+
+    rows = [tier1, tier2]
+
+    # Data rows
+    for idx, s_row in enumerate(students_data, 1):
+        r = [
+            Paragraph(str(idx), td_style),
+            Paragraph(f"<b>{s_row['student'].register_number}</b>", td_style),
+            Paragraph(s_row['student'].student_name, td_left)
+        ]
+        for m in mappings:
+            subj_info = s_row['subjects'].get(m.id, {})
+            r.append(Paragraph(str(subj_info.get('ica_disp', '-')), td_style))
+            r.append(Paragraph(str(subj_info.get('tee_disp', '-')), td_style))
+            
+            tot_val = subj_info.get('total_score', '-')
+            is_pass = subj_info.get('is_pass')
+            if is_pass is False:
+                r.append(Paragraph(f"<font color='red'><b>{tot_val}</b></font>", td_bold))
+            else:
+                r.append(Paragraph(f"<b>{tot_val}</b>", td_bold))
+
+        r.append(Paragraph(f"<b>{s_row['grand_total_score']}/{s_row['grand_total_max']}</b>", td_bold))
+        r.append(Paragraph(f"<b>{s_row['overall_percentage']}%</b>", td_bold))
+        res_color = "green" if s_row['result'] == 'PASS' else ("red" if s_row['result'] == 'FAIL' else "gray")
+        r.append(Paragraph(f"<font color='{res_color}'><b>{s_row['result']}</b></font>", td_bold))
+        rows.append(r)
+
+    # Class Average Row
+    avg_row = [
+        Paragraph("<b>Avg</b>", td_bold),
+        Paragraph("", td_bold),
+        Paragraph("<b>Class Average</b>", td_bold)
+    ]
+    for m in mappings:
+        st = subject_stats.get(m.id, {})
+        avg_row.append(Paragraph(str(st.get('avg_ica', '-')), td_style))
+        avg_row.append(Paragraph(str(st.get('avg_tee', '-')), td_style))
+        avg_row.append(Paragraph(f"<b>{st.get('avg_total', '-')}</b>", td_bold))
+
+    avg_row.append(Paragraph("-", td_style))
+    avg_row.append(Paragraph(f"<b>{overall_stats['class_average_pct']}%</b>", td_bold))
+    avg_row.append(Paragraph(f"<b>{overall_stats['class_pass_rate']}% Pass</b>", td_bold))
+    rows.append(avg_row)
+
+    # Calculate column widths dynamically based on number of subjects
+    num_subj = len(mappings)
+    fixed_widths = [20, 65, 95]
+    end_widths = [55, 45, 45]
+    total_avail = 780 - sum(fixed_widths) - sum(end_widths)
+    subj_col_width = (total_avail / (num_subj * 3)) if num_subj > 0 else 30
+    subj_col_width = max(min(subj_col_width, 45), 25)
+
+    col_widths = fixed_widths + ([subj_col_width] * (num_subj * 3)) + end_widths
+
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 1), colors.HexColor('#1B365D')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#E2E8F0')),
+    ]
+
+    # Spanning for Tier 1 subject headers
+    col_idx = 3
+    for m in mappings:
+        t_style.append(('SPAN', (col_idx, 0), (col_idx + 2, 0)))
+        col_idx += 3
+
+    # Spanning for fixed columns in header
+    t_style.append(('SPAN', (0, 0), (0, 1)))
+    t_style.append(('SPAN', (1, 0), (1, 1)))
+    t_style.append(('SPAN', (2, 0), (2, 1)))
+    t_style.append(('SPAN', (col_idx, 0), (col_idx, 1)))
+    t_style.append(('SPAN', (col_idx + 1, 0), (col_idx + 1, 1)))
+    t_style.append(('SPAN', (col_idx + 2, 0), (col_idx + 2, 1)))
+
+    table = Table(rows, colWidths=col_widths)
+    table.setStyle(TableStyle(t_style))
+    story.append(table)
+    story.append(Spacer(1, 25))
+
+    # Signatures
+    sig_data = [
+        [
+            Paragraph("____________________________<br/><b>Class Coordinator</b>", meta_style),
+            Paragraph("____________________________<br/><b>Head of Department</b>", meta_style),
+            Paragraph("____________________________<br/><b>Dean / Controller of Examinations</b>", meta_style),
+        ]
+    ]
+    sig_table = Table(sig_data, colWidths=[260, 260, 240])
+    sig_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(sig_table)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
 def generate_student_grade_card_pdf(student_id):
     """
     Generate an individual student academic report PDF in Portrait A4.
@@ -410,6 +655,251 @@ def generate_student_grade_card_pdf(student_id):
         f"<b>Cumulative Aggregate:</b> {grand_scored:g} out of {grand_max:g} &nbsp;|&nbsp; <b>Overall Percentage:</b> {overall_pct:.2f}%",
         ParagraphStyle('Agg', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#1B365D'))
     ))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+def generate_section_consolidated_pdf(section_id):
+    """
+    Generate an official consolidated grade sheet PDF for a section across all mapped subjects.
+    Page orientation: Landscape A4.
+    """
+    from app.services.analytics_service import get_section_consolidated_sheet
+    data = get_section_consolidated_sheet(section_id)
+    section = data['section']
+    mappings = data['mappings']
+    students_data = data['students_data']
+    subject_stats = data['subject_stats']
+    overall_stats = data['overall_stats']
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=25,
+        leftMargin=25,
+        topMargin=25,
+        bottomMargin=25
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=14,
+        textColor=colors.HexColor('#1B365D'),
+        alignment=1,
+        spaceAfter=3
+    )
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        textColor=colors.HexColor('#2E5B88'),
+        alignment=1,
+        spaceAfter=8
+    )
+    meta_style = ParagraphStyle(
+        'MetaStyle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8,
+        textColor=colors.HexColor('#2D3748'),
+        leading=11
+    )
+    th_style = ParagraphStyle(
+        'ThStyle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=7,
+        textColor=colors.white,
+        alignment=1
+    )
+    td_style = ParagraphStyle(
+        'TdStyle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=7,
+        alignment=1
+    )
+    td_bold = ParagraphStyle(
+        'TdBold',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=7,
+        alignment=1
+    )
+    td_left = ParagraphStyle(
+        'TdLeft',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=7,
+        alignment=0
+    )
+
+    story = []
+    story.append(Paragraph("ACADEMIC ASSESSMENT MANAGEMENT SYSTEM", title_style))
+    story.append(Paragraph("OFFICIAL CONSOLIDATED SECTION GRADE SHEET (ALL SUBJECTS)", subtitle_style))
+
+    # Meta Table
+    meta_data = [
+        [
+            Paragraph(f"<b>Programme:</b> {section.programme.name} ({section.programme.code})", meta_style),
+            Paragraph(f"<b>Semester:</b> {section.semester.name}", meta_style),
+            Paragraph(f"<b>Section:</b> {section.name}", meta_style),
+        ],
+        [
+            Paragraph(f"<b>Academic Year:</b> {section.academic_year.year_code}", meta_style),
+            Paragraph(f"<b>Total Students:</b> {overall_stats['total_students']}", meta_style),
+            Paragraph(f"<b>Class Pass Rate:</b> {overall_stats['class_pass_rate']}%", meta_style),
+        ]
+    ]
+    meta_table = Table(meta_data, colWidths=[280, 240, 240])
+    meta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 10))
+
+    # Table Headers: Tier 1 (Subject groups) & Tier 2 (ICA/TEE/Tot)
+    tier1 = [
+        Paragraph("#", th_style),
+        Paragraph("Register No", th_style),
+        Paragraph("Student Name", th_style)
+    ]
+    tier2 = [
+        Paragraph("", th_style),
+        Paragraph("", th_style),
+        Paragraph("", th_style)
+    ]
+
+    for m in mappings:
+        tier1.extend([
+            Paragraph(f"<b>{m.subject.subject_code}</b>", th_style),
+            Paragraph("", th_style),
+            Paragraph("", th_style)
+        ])
+        tier2.extend([
+            Paragraph(f"ICA ({int(m.subject.ica_max)})", th_style),
+            Paragraph(f"TEE ({int(m.subject.tee_max)})", th_style),
+            Paragraph("Total", th_style)
+        ])
+
+    tier1.extend([
+        Paragraph("Grand Tot", th_style),
+        Paragraph("Overall %", th_style),
+        Paragraph("Result", th_style)
+    ])
+    tier2.extend([
+        Paragraph("", th_style),
+        Paragraph("", th_style),
+        Paragraph("", th_style)
+    ])
+
+    rows = [tier1, tier2]
+
+    # Data rows
+    for idx, s_row in enumerate(students_data, 1):
+        r = [
+            Paragraph(str(idx), td_style),
+            Paragraph(f"<b>{s_row['student'].register_number}</b>", td_style),
+            Paragraph(s_row['student'].student_name, td_left)
+        ]
+        for m in mappings:
+            subj_info = s_row['subjects'].get(m.id, {})
+            r.append(Paragraph(str(subj_info.get('ica_disp', '-')), td_style))
+            r.append(Paragraph(str(subj_info.get('tee_disp', '-')), td_style))
+            
+            tot_val = subj_info.get('total_score', '-')
+            is_pass = subj_info.get('is_pass')
+            if is_pass is False:
+                r.append(Paragraph(f"<font color='red'><b>{tot_val}</b></font>", td_bold))
+            else:
+                r.append(Paragraph(f"<b>{tot_val}</b>", td_bold))
+
+        r.append(Paragraph(f"<b>{s_row['grand_total_score']}/{s_row['grand_total_max']}</b>", td_bold))
+        r.append(Paragraph(f"<b>{s_row['overall_percentage']}%</b>", td_bold))
+        res_color = "green" if s_row['result'] == 'PASS' else ("red" if s_row['result'] == 'FAIL' else "gray")
+        r.append(Paragraph(f"<font color='{res_color}'><b>{s_row['result']}</b></font>", td_bold))
+        rows.append(r)
+
+    # Class Average Row
+    avg_row = [
+        Paragraph("<b>Avg</b>", td_bold),
+        Paragraph("", td_bold),
+        Paragraph("<b>Class Average</b>", td_bold)
+    ]
+    for m in mappings:
+        st = subject_stats.get(m.id, {})
+        avg_row.append(Paragraph(str(st.get('avg_ica', '-')), td_style))
+        avg_row.append(Paragraph(str(st.get('avg_tee', '-')), td_style))
+        avg_row.append(Paragraph(f"<b>{st.get('avg_total', '-')}</b>", td_bold))
+
+    avg_row.append(Paragraph("-", td_style))
+    avg_row.append(Paragraph(f"<b>{overall_stats['class_average_pct']}%</b>", td_bold))
+    avg_row.append(Paragraph(f"<b>{overall_stats['class_pass_rate']}% Pass</b>", td_bold))
+    rows.append(avg_row)
+
+    # Calculate column widths dynamically based on number of subjects
+    num_subj = len(mappings)
+    fixed_widths = [20, 65, 95]
+    end_widths = [55, 45, 45]
+    total_avail = 780 - sum(fixed_widths) - sum(end_widths)
+    subj_col_width = (total_avail / (num_subj * 3)) if num_subj > 0 else 30
+    subj_col_width = max(min(subj_col_width, 45), 25)
+
+    col_widths = fixed_widths + ([subj_col_width] * (num_subj * 3)) + end_widths
+
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 1), colors.HexColor('#1B365D')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#E2E8F0')),
+    ]
+
+    # Spanning for Tier 1 subject headers
+    col_idx = 3
+    for m in mappings:
+        t_style.append(('SPAN', (col_idx, 0), (col_idx + 2, 0)))
+        col_idx += 3
+
+    # Spanning for fixed columns in header
+    t_style.append(('SPAN', (0, 0), (0, 1)))
+    t_style.append(('SPAN', (1, 0), (1, 1)))
+    t_style.append(('SPAN', (2, 0), (2, 1)))
+    t_style.append(('SPAN', (col_idx, 0), (col_idx, 1)))
+    t_style.append(('SPAN', (col_idx + 1, 0), (col_idx + 1, 1)))
+    t_style.append(('SPAN', (col_idx + 2, 0), (col_idx + 2, 1)))
+
+    table = Table(rows, colWidths=col_widths)
+    table.setStyle(TableStyle(t_style))
+    story.append(table)
+    story.append(Spacer(1, 25))
+
+    # Signatures
+    sig_data = [
+        [
+            Paragraph("____________________________<br/><b>Class Coordinator</b>", meta_style),
+            Paragraph("____________________________<br/><b>Head of Department</b>", meta_style),
+            Paragraph("____________________________<br/><b>Dean / Controller of Examinations</b>", meta_style),
+        ]
+    ]
+    sig_table = Table(sig_data, colWidths=[260, 260, 240])
+    sig_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(sig_table)
 
     doc.build(story)
     buffer.seek(0)

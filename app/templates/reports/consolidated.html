@@ -2,148 +2,429 @@
 {% block title %}Consolidated Mark Sheet{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
   <div>
-    <h4 class="fw-bold mb-1 text-dark">Consolidated Class Mark Sheet</h4>
-    <p class="text-muted small mb-0">Official academic grade sheet with assessment totals and export capabilities (FR-15)</p>
+    <h4 class="fw-bold mb-1 text-dark">
+      <i class="fa-solid fa-table-list text-primary me-2"></i>Consolidated Class Mark Sheet
+    </h4>
+    <p class="text-muted small mb-0">Official academic grade sheet with multi-subject aggregation and export capabilities (FR-15)</p>
   </div>
-  {% if selected_mapping %}
-    <div class="btn-group btn-group-sm">
-      <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='xlsx') }}" class="btn btn-outline-success">
-        <i class="fa-solid fa-file-excel me-1"></i> Export Excel
-      </a>
-      <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='csv') }}" class="btn btn-outline-secondary">
-        <i class="fa-solid fa-file-csv me-1"></i> Export CSV
-      </a>
-      <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='pdf') }}" class="btn btn-outline-danger">
-        <i class="fa-solid fa-file-pdf me-1"></i> Export PDF
-      </a>
-    </div>
+  <div>
+    {% if view_mode == 'section' and consolidated_data and consolidated_data.section %}
+      <div class="btn-group btn-group-sm shadow-sm">
+        <a href="{{ url_for('reports.export_section_consolidated_report', section_id=selected_section_id, format='xlsx') }}" class="btn btn-outline-success">
+          <i class="fa-solid fa-file-excel me-1"></i> Export Excel
+        </a>
+        <a href="{{ url_for('reports.export_section_consolidated_report', section_id=selected_section_id, format='csv') }}" class="btn btn-outline-secondary">
+          <i class="fa-solid fa-file-csv me-1"></i> Export CSV
+        </a>
+        <a href="{{ url_for('reports.export_section_consolidated_report', section_id=selected_section_id, format='pdf') }}" class="btn btn-outline-danger">
+          <i class="fa-solid fa-file-pdf me-1"></i> Export PDF
+        </a>
+      </div>
+    {% elif selected_mapping %}
+      <div class="btn-group btn-group-sm shadow-sm">
+        <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='xlsx') }}" class="btn btn-outline-success">
+          <i class="fa-solid fa-file-excel me-1"></i> Export Excel
+        </a>
+        <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='csv') }}" class="btn btn-outline-secondary">
+          <i class="fa-solid fa-file-csv me-1"></i> Export CSV
+        </a>
+        <a href="{{ url_for('reports.export_section_report', mapping_id=selected_mapping.id, format='pdf') }}" class="btn btn-outline-danger">
+          <i class="fa-solid fa-file-pdf me-1"></i> Export PDF
+        </a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- View Mode Switcher -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="btn-group btn-group-sm" role="group">
+    <a href="{{ url_for('reports.consolidated', view_mode='section', section_id=selected_section_id) }}"
+       class="btn {% if view_mode == 'section' %}btn-primary text-white fw-semibold{% else %}btn-outline-primary{% endif %}">
+      <i class="fa-solid fa-table-cells me-1"></i> All Subjects (Section Consolidated)
+    </a>
+    <a href="{{ url_for('reports.consolidated', view_mode='subject', mapping_id=selected_mapping.id if selected_mapping else None) }}"
+       class="btn {% if view_mode == 'subject' %}btn-primary text-white fw-semibold{% else %}btn-outline-primary{% endif %}">
+      <i class="fa-solid fa-list-check me-1"></i> Single Subject Assessment Breakdown
+    </a>
+  </div>
+  {% if view_mode == 'section' and consolidated_data %}
+    <span class="badge bg-light text-primary border small">
+      <i class="fa-solid fa-layer-group me-1"></i>{{ consolidated_data.mappings|length }} Subjects Mapped
+    </span>
   {% endif %}
 </div>
 
-<!-- Mapping Selector Bar -->
-<div class="filter-bar mb-4">
-  <form method="GET" action="{{ url_for('reports.consolidated') }}" class="row g-2 align-items-center">
-    <div class="col-md-10">
-      <label class="form-label small fw-semibold text-muted mb-1">Select Allocation / Course</label>
-      <select name="mapping_id" class="form-select form-select-sm" onchange="this.form.submit()">
-        {% for m in mappings %}
-          <option value="{{ m.id }}" {% if selected_mapping and selected_mapping.id == m.id %}selected{% endif %}>
-            {{ m.subject.subject_code }} - {{ m.subject.subject_name }} &bull; {{ m.programme.code }} Sem {{ m.semester.number }} Sec {{ m.section.name }} &bull; Prof. {{ m.faculty.name }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-2 d-flex align-items-end">
-      <button type="submit" class="btn btn-primary-custom btn-sm w-100">Load Sheet</button>
-    </div>
-  </form>
+<!-- Selector Filter Bar -->
+<div class="card card-custom mb-4 shadow-sm border-0">
+  <div class="card-body p-3">
+    {% if view_mode == 'section' %}
+      <form method="GET" action="{{ url_for('reports.consolidated') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="view_mode" value="section">
+        <div class="col-md-10">
+          <label class="form-label small fw-semibold text-muted mb-1">
+            <i class="fa-solid fa-users-rectangle me-1 text-primary"></i>Select Section to Display All Subjects
+          </label>
+          <select name="section_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for sec in sections %}
+              <option value="{{ sec.id }}" {% if selected_section_id == sec.id %}selected{% endif %}>
+                {{ sec.programme.code }} &bull; Sem {{ sec.semester.number }} &bull; Section {{ sec.name }} &mdash; {{ sec.programme.name }} ({{ sec.academic_year.year_code }})
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-primary-custom btn-sm w-100">
+            <i class="fa-solid fa-filter me-1"></i> Load Section
+          </button>
+        </div>
+      </form>
+    {% else %}
+      <form method="GET" action="{{ url_for('reports.consolidated') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="view_mode" value="subject">
+        <div class="col-md-10">
+          <label class="form-label small fw-semibold text-muted mb-1">
+            <i class="fa-solid fa-book-open me-1 text-primary"></i>Select Single Course / Subject Allocation
+          </label>
+          <select name="mapping_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for m in mappings %}
+              <option value="{{ m.id }}" {% if selected_mapping and selected_mapping.id == m.id %}selected{% endif %}>
+                {{ m.subject.subject_code }} - {{ m.subject.subject_name }} &bull; {{ m.programme.code }} Sem {{ m.semester.number }} Sec {{ m.section.name }} &bull; Prof. {{ m.faculty.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-primary-custom btn-sm w-100">
+            <i class="fa-solid fa-filter me-1"></i> Load Subject
+          </button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
 </div>
 
-{% if selected_mapping %}
-  <div class="card card-custom mb-4">
-    <div class="card-header-custom d-flex justify-content-between align-items-center">
-      <div>
-        <span class="fs-6 fw-bold text-primary">{{ selected_mapping.subject.subject_code }} - {{ selected_mapping.subject.subject_name }}</span>
-        <div class="small text-muted">
-          {{ selected_mapping.programme.name }} &bull; {{ selected_mapping.semester.name }} &bull; Section {{ selected_mapping.section.name }} &bull; Faculty: {{ selected_mapping.faculty.name }}
+<!-- ================= SECTION CONSOLIDATED (ALL SUBJECTS) VIEW ================= -->
+{% if view_mode == 'section' %}
+  {% if consolidated_data and consolidated_data.section %}
+    {% set sec = consolidated_data.section %}
+    {% set o_stats = consolidated_data.overall_stats %}
+
+    <!-- Section Summary KPI Banner -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="card card-custom p-3 border-start border-primary border-4 shadow-sm">
+          <small class="text-muted fw-semibold text-uppercase" style="font-size: 0.72rem;">Enrolled Students</small>
+          <h4 class="fw-bold text-dark mb-0 mt-1">{{ o_stats.total_students }}</h4>
         </div>
       </div>
-      <span class="badge bg-light text-dark border">Total Students: {{ students|length }}</span>
+      <div class="col-6 col-md-3">
+        <div class="card card-custom p-3 border-start border-info border-4 shadow-sm">
+          <small class="text-muted fw-semibold text-uppercase" style="font-size: 0.72rem;">Evaluated Subjects</small>
+          <h4 class="fw-bold text-dark mb-0 mt-1">{{ o_stats.total_subjects }}</h4>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card card-custom p-3 border-start border-success border-4 shadow-sm">
+          <small class="text-muted fw-semibold text-uppercase" style="font-size: 0.72rem;">Class Pass Rate</small>
+          <h4 class="fw-bold text-success mb-0 mt-1">{{ o_stats.class_pass_rate }}%</h4>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card card-custom p-3 border-start border-warning border-4 shadow-sm">
+          <small class="text-muted fw-semibold text-uppercase" style="font-size: 0.72rem;">Class Average Score</small>
+          <h4 class="fw-bold text-dark mb-0 mt-1">{{ o_stats.class_average_pct }}%</h4>
+        </div>
+      </div>
     </div>
 
-    <div class="table-responsive">
-      <table class="table table-custom table-hover">
-        <thead>
-          <tr>
-            <th style="width: 45px;">#</th>
-            <th>Register Number</th>
-            <th>Student Name</th>
-            {% for ass in assessments %}
-              <th class="text-center">
-                {{ ass.assessment_name }}
-                <div class="badge bg-light text-muted border" style="font-size: 0.65rem;">Max: {{ ass.max_marks|int }}</div>
-              </th>
-            {% endfor %}
-            <th class="text-center">Total Scored</th>
-            <th class="text-center">Max Total</th>
-            <th class="text-center">Percentage</th>
-            <th class="text-center">Result</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for stu in students %}
-            {% set total_score = namespace(val=0.0) %}
-            {% set total_max = namespace(val=0.0) %}
-            <tr>
-              <td>{{ loop.index }}</td>
-              <td class="fw-bold font-monospace text-primary">{{ stu.register_number }}</td>
-              <td class="fw-semibold">{{ stu.student_name }}</td>
-              {% for ass in assessments %}
-                {% set mk = marks_map.get((stu.id, ass.id)) %}
+    <!-- Consolidated Multi-Subject Table -->
+    <div class="card card-custom shadow-sm mb-4">
+      <div class="card-header-custom d-flex justify-content-between align-items-center">
+        <div>
+          <span class="fs-6 fw-bold text-primary">
+            {{ sec.programme.name }} &bull; {{ sec.semester.name }} &bull; Section {{ sec.name }}
+          </span>
+          <div class="small text-muted">
+            Academic Year: {{ sec.academic_year.year_code }} &bull; Showing marks across all {{ consolidated_data.mappings|length }} assigned subject(s)
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+            <i class="fa-solid fa-check-circle me-1"></i>{{ o_stats.passed_count }} Passed
+          </span>
+          {% if o_stats.failed_count > 0 %}
+            <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">
+              <i class="fa-solid fa-triangle-exclamation me-1"></i>{{ o_stats.failed_count }} Failed
+            </span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle mb-0" style="font-size: 0.88rem;">
+          <thead class="table-light">
+            <!-- Tier 1 Headers: Subject Groups -->
+            <tr class="text-center align-middle">
+              <th rowspan="2" style="width: 40px;" class="bg-light-subtle">#</th>
+              <th rowspan="2" style="width: 120px;" class="bg-light-subtle text-start">Register No</th>
+              <th rowspan="2" style="min-width: 170px;" class="bg-light-subtle text-start">Student Name</th>
+              {% for m in consolidated_data.mappings %}
+                <th colspan="3" class="text-center bg-light border-start border-end">
+                  <span class="badge bg-primary me-1">{{ m.subject.subject_code }}</span>
+                  <span class="fw-bold">{{ m.subject.subject_name }}</span>
+                  <div class="text-muted fw-normal" style="font-size: 0.72rem;">
+                    Prof. {{ m.faculty.name }}
+                  </div>
+                </th>
+              {% endfor %}
+              <th rowspan="2" class="text-center bg-light-subtle" style="min-width: 110px;">Grand Total</th>
+              <th rowspan="2" class="text-center bg-light-subtle" style="width: 90px;">Overall %</th>
+              <th rowspan="2" class="text-center bg-light-subtle" style="width: 85px;">Result</th>
+              <th rowspan="2" class="text-center bg-light-subtle" style="width: 110px;">Division</th>
+            </tr>
+            <!-- Tier 2 Headers: Sub-columns per Subject -->
+            <tr class="text-center align-middle" style="font-size: 0.78rem;">
+              {% for m in consolidated_data.mappings %}
+                <th class="border-start text-muted bg-white" style="width: 65px;">
+                  ICA <span class="d-block text-secondary" style="font-size: 0.68rem;">({{ m.subject.ica_max|int }})</span>
+                </th>
+                <th class="text-muted bg-white" style="width: 65px;">
+                  TEE <span class="d-block text-secondary" style="font-size: 0.68rem;">({{ m.subject.tee_max|int }})</span>
+                </th>
+                <th class="border-end fw-bold bg-white text-dark" style="width: 75px;">
+                  Total <span class="d-block text-secondary fw-normal" style="font-size: 0.68rem;">({{ (m.subject.ica_max + m.subject.tee_max)|int }})</span>
+                </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for s_row in consolidated_data.students_data %}
+              <tr>
+                <td class="text-center text-muted small">{{ loop.index }}</td>
+                <td class="font-monospace fw-bold text-primary">{{ s_row.student.register_number }}</td>
+                <td class="fw-semibold text-dark">{{ s_row.student.student_name }}</td>
+                
+                {% for m in consolidated_data.mappings %}
+                  {% set subj = s_row.subjects.get(m.id) %}
+                  {% if subj %}
+                    <!-- ICA Score -->
+                    <td class="text-center border-start">
+                      {% if subj.ica_disp == 'AB' %}
+                        <span class="badge bg-danger-subtle text-danger fw-bold">AB</span>
+                      {% elif subj.ica_disp == 'EX' %}
+                        <span class="badge bg-info-subtle text-info fw-bold">EX</span>
+                      {% elif subj.ica_disp != '-' %}
+                        <span class="fw-semibold text-secondary">{{ subj.ica_disp }}</span>
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <!-- TEE Score -->
+                    <td class="text-center">
+                      {% if subj.tee_disp == 'AB' %}
+                        <span class="badge bg-danger-subtle text-danger fw-bold">AB</span>
+                      {% elif subj.tee_disp == 'EX' %}
+                        <span class="badge bg-info-subtle text-info fw-bold">EX</span>
+                      {% elif subj.tee_disp != '-' %}
+                        <span class="fw-semibold text-secondary">{{ subj.tee_disp }}</span>
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <!-- Subject Total -->
+                    <td class="text-center border-end {% if subj.is_pass is false %}table-danger{% else %}bg-light-subtle{% endif %}">
+                      {% if subj.has_data %}
+                        <div class="fw-bold {% if subj.is_pass %}text-dark{% else %}text-danger{% endif %}">
+                          {{ subj.total_score }}
+                        </div>
+                        <small class="{% if subj.is_pass %}text-muted{% else %}text-danger fw-bold{% endif %}" style="font-size: 0.72rem;">
+                          {{ subj.percentage }}%
+                        </small>
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                  {% else %}
+                    <td class="text-center text-muted border-start">-</td>
+                    <td class="text-center text-muted">-</td>
+                    <td class="text-center text-muted border-end">-</td>
+                  {% endif %}
+                {% endfor %}
+
+                <!-- Grand Total -->
+                <td class="text-center fw-bold text-dark">
+                  {{ s_row.grand_total_score }}
+                  <span class="text-muted fw-normal small">/ {{ s_row.grand_total_max }}</span>
+                </td>
+
+                <!-- Overall Percentage -->
                 <td class="text-center">
-                  {% if mk %}
-                    {% if mk.status == 'Absent' %}
-                      <span class="text-danger fw-bold">AB</span>
-                      {% set total_max.val = total_max.val + ass.max_marks %}
-                    {% elif mk.status == 'Exempted' %}
-                      <span class="text-info fw-bold">EX</span>
-                    {% elif mk.score is not none %}
-                      <span class="fw-semibold">{{ mk.score|int if mk.score.is_integer() else mk.score }}</span>
-                      {% set total_score.val = total_score.val + mk.score %}
-                      {% set total_max.val = total_max.val + ass.max_marks %}
+                  {% set pct = s_row.overall_percentage %}
+                  <span class="fw-bold {% if pct >= 70 %}text-success{% elif pct >= 50 %}text-primary{% elif pct >= 40 %}text-warning{% else %}text-danger{% endif %}">
+                    {{ pct }}%
+                  </span>
+                </td>
+
+                <!-- Result Badge -->
+                <td class="text-center">
+                  {% if s_row.result == 'PASS' %}
+                    <span class="badge bg-success px-2 py-1">PASS</span>
+                  {% elif s_row.result == 'FAIL' %}
+                    <span class="badge bg-danger px-2 py-1">FAIL</span>
+                  {% else %}
+                    <span class="badge bg-secondary px-2 py-1">PENDING</span>
+                  {% endif %}
+                </td>
+
+                <!-- Division / Class -->
+                <td class="text-center small fw-semibold text-secondary">
+                  {{ s_row.division }}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="{{ (consolidated_data.mappings|length * 3) + 7 }}" class="text-center py-5 text-muted">
+                  <i class="fa-solid fa-user-slash fs-3 d-block mb-2 text-secondary opacity-50"></i>
+                  No active students found in this section.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <!-- Class Average Summary Row -->
+          {% if consolidated_data.students_data %}
+            <tfoot class="table-light border-top border-2">
+              <tr class="align-middle fw-bold">
+                <td colspan="3" class="text-center text-primary py-2">
+                  <i class="fa-solid fa-chart-line me-1"></i> Class Average
+                </td>
+                {% for m in consolidated_data.mappings %}
+                  {% set st = consolidated_data.subject_stats.get(m.id) %}
+                  <td class="text-center border-start text-secondary small">{{ st.avg_ica if st else '-' }}</td>
+                  <td class="text-center text-secondary small">{{ st.avg_tee if st else '-' }}</td>
+                  <td class="text-center border-end text-primary">{{ st.avg_total if st else '-' }}</td>
+                {% endfor %}
+                <td class="text-center text-primary">-</td>
+                <td class="text-center text-primary">{{ o_stats.class_average_pct }}%</td>
+                <td class="text-center text-success" colspan="2">{{ o_stats.class_pass_rate }}% Pass Rate</td>
+              </tr>
+            </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-info">Please select a section from the dropdown above to view its consolidated grade sheet.</div>
+  {% endif %}
+
+<!-- ================= SINGLE SUBJECT BREAKDOWN VIEW ================= -->
+{% else %}
+  {% if selected_mapping %}
+    <div class="card card-custom mb-4 shadow-sm">
+      <div class="card-header-custom d-flex justify-content-between align-items-center">
+        <div>
+          <span class="fs-6 fw-bold text-primary">{{ selected_mapping.subject.subject_code }} - {{ selected_mapping.subject.subject_name }}</span>
+          <div class="small text-muted">
+            {{ selected_mapping.programme.name }} &bull; {{ selected_mapping.semester.name }} &bull; Section {{ selected_mapping.section.name }} &bull; Faculty: Prof. {{ selected_mapping.faculty.name }}
+          </div>
+        </div>
+        <span class="badge bg-light text-dark border">Total Students: {{ students|length }}</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-custom table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width: 45px;">#</th>
+              <th>Register Number</th>
+              <th>Student Name</th>
+              {% for ass in assessments %}
+                <th class="text-center">
+                  {{ ass.assessment_name }}
+                  <div class="badge bg-light text-muted border" style="font-size: 0.65rem;">Max: {{ ass.max_marks|int }}</div>
+                </th>
+              {% endfor %}
+              <th class="text-center">Total Scored</th>
+              <th class="text-center">Max Total</th>
+              <th class="text-center">Percentage</th>
+              <th class="text-center">Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for stu in students %}
+              {% set total_score = namespace(val=0.0) %}
+              {% set total_max = namespace(val=0.0) %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td class="fw-bold font-monospace text-primary">{{ stu.register_number }}</td>
+                <td class="fw-semibold">{{ stu.student_name }}</td>
+                {% for ass in assessments %}
+                  {% set mk = marks_map.get((stu.id, ass.id)) %}
+                  <td class="text-center">
+                    {% if mk %}
+                      {% if mk.status == 'Absent' %}
+                        <span class="text-danger fw-bold">AB</span>
+                        {% set total_max.val = total_max.val + ass.max_marks %}
+                      {% elif mk.status == 'Exempted' %}
+                        <span class="text-info fw-bold">EX</span>
+                      {% elif mk.score is not none %}
+                        <span class="fw-semibold">{{ mk.score|int if mk.score.is_integer() else mk.score }}</span>
+                        {% set total_score.val = total_score.val + mk.score %}
+                        {% set total_max.val = total_max.val + ass.max_marks %}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                        {% set total_max.val = total_max.val + ass.max_marks %}
+                      {% endif %}
                     {% else %}
                       <span class="text-muted">-</span>
                       {% set total_max.val = total_max.val + ass.max_marks %}
                     {% endif %}
+                  </td>
+                {% endfor %}
+                <td class="text-center fw-bold text-dark">
+                  {{ total_score.val|round(1) }}
+                </td>
+                <td class="text-center text-muted">
+                  {{ total_max.val|round(1) }}
+                </td>
+                <td class="text-center">
+                  {% if total_max.val > 0 %}
+                    {% set pct = (total_score.val / total_max.val * 100)|round(1) %}
+                    <span class="fw-bold {% if pct >= 50 %}text-success{% elif pct >= 40 %}text-warning{% else %}text-danger{% endif %}">
+                      {{ pct }}%
+                    </span>
                   {% else %}
-                    <span class="text-muted">-</span>
-                    {% set total_max.val = total_max.val + ass.max_marks %}
+                    -
                   {% endif %}
                 </td>
-              {% endfor %}
-              <td class="text-center fw-bold text-dark">
-                {{ total_score.val|round(1) }}
-              </td>
-              <td class="text-center text-muted">
-                {{ total_max.val|round(1) }}
-              </td>
-              <td class="text-center">
-                {% if total_max.val > 0 %}
-                  {% set pct = (total_score.val / total_max.val * 100)|round(1) %}
-                  <span class="fw-bold {% if pct >= 50 %}text-success{% elif pct >= 40 %}text-warning{% else %}text-danger{% endif %}">
-                    {{ pct }}%
-                  </span>
-                {% else %}
-                  -
-                {% endif %}
-              </td>
-              <td class="text-center">
-                {% if total_max.val > 0 %}
-                  {% set pct = (total_score.val / total_max.val * 100) %}
-                  {% if pct >= 40 %}
-                    <span class="badge bg-success">PASS</span>
+                <td class="text-center">
+                  {% if total_max.val > 0 %}
+                    {% set pct = (total_score.val / total_max.val * 100) %}
+                    {% if pct >= 40 %}
+                      <span class="badge bg-success">PASS</span>
+                    {% else %}
+                      <span class="badge bg-danger">FAIL</span>
+                    {% endif %}
                   {% else %}
-                    <span class="badge bg-danger">FAIL</span>
+                    <span class="badge bg-secondary">-</span>
                   {% endif %}
-                {% else %}
-                  <span class="badge bg-secondary">-</span>
-                {% endif %}
-              </td>
-            </tr>
-          {% else %}
-            <tr>
-              <td colspan="{{ assessments|length + 7 }}" class="text-center py-4 text-muted">
-                No student marks recorded for this section yet.
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="{{ assessments|length + 7 }}" class="text-center py-4 text-muted">
+                  No student marks recorded for this section yet.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
-{% else %}
-  <div class="alert alert-info">Please select a subject allocation from the dropdown above to view its consolidated mark sheet.</div>
+  {% else %}
+    <div class="alert alert-info">Please select a subject allocation from the dropdown above to view its single subject sheet.</div>
+  {% endif %}
 {% endif %}
 {% endblock %}

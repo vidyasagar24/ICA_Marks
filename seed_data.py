@@ -165,11 +165,17 @@ def _do_seed():
     map4 = FacultySubjectMapping(academic_year_id=ay3.id, programme_id=prog_csd.id, semester_id=sem2.id, section_id=sec_csd_a.id, subject_id=subj_stats.id, faculty_id=fac1.id, status='Active')
     # Allocation 5: Year 2026-27, Sem IV, CSE, Sec A, Operating Systems -> Faculty D
     map5 = FacultySubjectMapping(academic_year_id=ay3.id, programme_id=prog_cse.id, semester_id=sem4.id, section_id=sec_cse_a.id, subject_id=subj_os.id, faculty_id=fac4.id, status='Active')
-    db.session.add_all([map1, map2, map3, map4, map5])
+    # Allocation 6: Year 2026-27, Sem II, CE, Sec A, Digital Logic -> Faculty B
+    map6 = FacultySubjectMapping(academic_year_id=ay3.id, programme_id=prog_ce.id, semester_id=sem2.id, section_id=sec_ce_a.id, subject_id=subj_dld.id, faculty_id=fac2.id, status='Active')
+    # Allocation 7: Year 2026-27, Sem II, CE, Sec B, Data Structures -> Faculty C
+    map7 = FacultySubjectMapping(academic_year_id=ay3.id, programme_id=prog_ce.id, semester_id=sem2.id, section_id=sec_ce_b.id, subject_id=subj_dsa.id, faculty_id=fac3.id, status='Active')
+    # Allocation 8: Year 2026-27, Sem IV, CSE, Sec A, DBMS -> Faculty C
+    map8 = FacultySubjectMapping(academic_year_id=ay3.id, programme_id=prog_cse.id, semester_id=sem4.id, section_id=sec_cse_a.id, subject_id=subj_db.id, faculty_id=fac3.id, status='Active')
+    db.session.add_all([map1, map2, map3, map4, map5, map6, map7, map8])
     db.session.flush()
 
     print("Seeding Assessments & Max Marks (FR-09)...")
-    mappings_list = [map1, map2, map3, map4, map5]
+    mappings_list = [map1, map2, map3, map4, map5, map6, map7, map8]
     for m in mappings_list:
         ass_configs = [
             ('Test 1', 'Test', 20.0, 1),
@@ -229,12 +235,33 @@ def _do_seed():
     )
     db.session.add(sub1)
 
-    # Map 3 (Data Structures - Faculty C): Submitted and Pending Review
+    # Map 3 (Data Structures - Faculty C): Evaluated for all students
     map3_assessments = {a.assessment_name: a for a in Assessment.query.filter_by(mapping_id=map3.id).all()}
-    for stu in sec_a_students[:4]:
-        db.session.add(Mark(student_id=stu.id, assessment_id=map3_assessments['Test 1'].id, mapping_id=map3.id, score=16.0, status='Present'))
-        db.session.add(Mark(student_id=stu.id, assessment_id=map3_assessments['Test 2'].id, mapping_id=map3.id, score=15.0, status='Present'))
-        db.session.add(Mark(student_id=stu.id, assessment_id=map3_assessments['Assignment'].id, mapping_id=map3.id, score=9.0, status='Present'))
+    map3_scores = [
+        (sec_a_students[0], {'Test 1': 17.0, 'Test 2': 18.0, 'Assignment': 9.0, 'Quiz 1': 8.5, 'ICA': 45.0, 'Term End Examination': 90.0}),
+        (sec_a_students[1], {'Test 1': 16.0, 'Test 2': 17.0, 'Assignment': 8.5, 'Quiz 1': 8.0, 'ICA': 43.0, 'Term End Examination': 86.0}),
+        (sec_a_students[2], {'Test 1': 15.0, 'Test 2': 14.0, 'Assignment': 8.0, 'Quiz 1': 7.5, 'ICA': 39.0, 'Term End Examination': 72.0}),
+        (sec_a_students[3], {'Test 1': 14.0, 'Test 2': 15.0, 'Assignment': 8.0, 'Quiz 1': 8.0, 'ICA': 40.0, 'Term End Examination': 80.0}),
+        (sec_a_students[4], {'Test 1': 8.0, 'Test 2': 7.0, 'Assignment': 5.0, 'Quiz 1': 4.0, 'ICA': 22.0, 'Term End Examination': 38.0}),
+        (sec_a_students[5], {'Test 1': 18.0, 'Test 2': 17.5, 'Assignment': 9.5, 'Quiz 1': 9.0, 'ICA': 47.0, 'Term End Examination': 91.0}),
+    ]
+    for stu, s_dict in map3_scores:
+        for a_name, s_val in s_dict.items():
+            db.session.add(Mark(student_id=stu.id, assessment_id=map3_assessments[a_name].id, mapping_id=map3.id, score=s_val, status='Present'))
+
+    # Map 6 (Digital Logic - Faculty B): Evaluated for all students
+    map6_assessments = {a.assessment_name: a for a in Assessment.query.filter_by(mapping_id=map6.id).all()}
+    map6_scores = [
+        (sec_a_students[0], {'Test 1': 19.0, 'Test 2': 18.5, 'Assignment': 9.5, 'Quiz 1': 9.0, 'ICA': 48.0, 'Term End Examination': 94.0}),
+        (sec_a_students[1], {'Test 1': 17.0, 'Test 2': 16.5, 'Assignment': 9.0, 'Quiz 1': 8.0, 'ICA': 44.0, 'Term End Examination': 82.0}),
+        (sec_a_students[2], {'Test 1': 14.5, 'Test 2': 13.5, 'Assignment': 7.5, 'Quiz 1': 7.0, 'ICA': 37.0, 'Term End Examination': 70.0}),
+        (sec_a_students[3], {'Test 1': 16.0, 'Test 2': 16.0, 'Assignment': 8.5, 'Quiz 1': 8.5, 'ICA': 41.0, 'Term End Examination': 82.0}),
+        (sec_a_students[4], {'Test 1': 7.5, 'Test 2': 8.0, 'Assignment': 4.5, 'Quiz 1': 3.5, 'ICA': 20.0, 'Term End Examination': 36.0}),
+        (sec_a_students[5], {'Test 1': 17.5, 'Test 2': 18.0, 'Assignment': 9.0, 'Quiz 1': 8.5, 'ICA': 45.0, 'Term End Examination': 89.0}),
+    ]
+    for stu, s_dict in map6_scores:
+        for a_name, s_val in s_dict.items():
+            db.session.add(Mark(student_id=stu.id, assessment_id=map6_assessments[a_name].id, mapping_id=map6.id, score=s_val, status='Present'))
 
     sub3 = Submission(
         mapping_id=map3.id,

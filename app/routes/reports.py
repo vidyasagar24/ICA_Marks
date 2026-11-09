@@ -5,10 +5,15 @@ from app.models import (
 )
 from app.utils.decorators import admin_required
 from app.services.analytics_service import (
-    get_section_analysis, get_faculty_workload_analysis, get_subject_wise_analysis
+    get_section_analysis, get_faculty_workload_analysis, get_subject_wise_analysis,
+    get_section_consolidated_sheet
 )
-from app.services.pdf_service import generate_section_marks_pdf, generate_student_grade_card_pdf
-from app.services.excel_service import export_marks_sheet
+from app.services.pdf_service import (
+    generate_section_marks_pdf, generate_student_grade_card_pdf, generate_section_consolidated_pdf
+)
+from app.services.excel_service import (
+    export_marks_sheet, export_section_consolidated_excel
+)
 
 reports_bp = Blueprint('reports', __name__, url_prefix='/reports')
 
@@ -75,18 +80,38 @@ def analytics():
 @reports_bp.route('/consolidated')
 @login_required
 def consolidated():
+    view_mode = request.args.get('view_mode')
     mapping_id = request.args.get('mapping_id', type=int)
-    
+    section_id = request.args.get('section_id', type=int)
+
+    # For admin, default view is 'section' (All Subjects) unless explicitly requesting single subject
     if current_user.is_admin:
+        if not view_mode:
+            view_mode = 'subject' if (mapping_id and not section_id) else 'section'
         mappings = FacultySubjectMapping.query.filter_by(status='Active').all()
+        sections = Section.query.filter_by(is_active=True).order_by(Section.id.asc()).all()
     else:
         mappings = FacultySubjectMapping.query.filter_by(faculty_id=current_user.faculty_id, status='Active').all()
+        sec_ids = {m.section_id for m in mappings}
+        sections = Section.query.filter(Section.id.in_(sec_ids), Section.is_active == True).order_by(Section.id.asc()).all() if sec_ids else []
+        if not view_mode:
+            view_mode = 'section' if sections else 'subject'
 
+    consolidated_data = None
+    if view_mode == 'section':
+        if not section_id and sections:
+            section_id = sections[0].id
+        if section_id:
+            try:
+                consolidated_data = get_section_consolidated_sheet(section_id)
+            except Exception as e:
+                flash(f"Notice: {e}", "warning")
+
+    # Subject breakdown data fallback/alternative
     if not mapping_id and mappings:
         mapping_id = mappings[0].id
 
     mapping = FacultySubjectMapping.query.get(mapping_id) if mapping_id else None
-    
     students = []
     assessments = []
     marks_map = {}
@@ -98,6 +123,10 @@ def consolidated():
 
     return render_template(
         'reports/consolidated.html',
+        view_mode=view_mode,
+        sections=sections,
+        selected_section_id=section_id,
+        consolidated_data=consolidated_data,
         mappings=mappings,
         selected_mapping=mapping,
         students=students,
@@ -207,6 +236,29 @@ def pending_report():
     return render_template('reports/pending_report.html', pending_list=pending_list)
 
 # ----------------- EXPORT ROUTING -----------------
+@reports_bp.route('/export/section-consolidated/<int:section_id>/<format>')
+@login_required
+def export_section_consolidated_report(section_id, format):
+    section = Section.query.get_or_404(section_id)
+    if current_user.is_faculty_role:
+        fac_mappings = FacultySubjectMapping.query.filter_by(
+            section_id=section_id, faculty_id=current_user.faculty_id, status='Active'
+        ).first()
+        if not fac_mappings:
+            abort(403)
+
+    sec_name = f"{section.programme.code}_Sem{section.semester.number}_Sec{section.name}"
+    if format == 'pdf':
+        output = generate_section_consolidated_pdf(section.id)
+        filename = f"Consolidated_GradeSheet_{sec_name}.pdf"
+        return send_file(output, download_name=filename, as_attachment=True, mimetype='application/pdf')
+    elif format in ['xlsx', 'csv']:
+        output = export_section_consolidated_excel(section.id, format=format)
+        mime = 'text/csv' if format == 'csv' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        filename = f"Consolidated_Marks_{sec_name}.{format}"
+        return send_file(output, download_name=filename, as_attachment=True, mimetype=mime)
+    abort(400)
+
 @reports_bp.route('/export/section/<int:mapping_id>/<format>')
 @login_required
 def export_section_report(mapping_id, format):

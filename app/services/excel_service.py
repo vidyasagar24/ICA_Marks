@@ -355,3 +355,225 @@ def export_marks_sheet(mapping_id, format='xlsx'):
             df.to_excel(writer, sheet_name="Consolidated Marks", index=False)
         output.seek(0)
         return output
+
+
+def export_section_consolidated_excel(section_id, format='xlsx'):
+    """
+    Export consolidated marks sheet for an entire section across all mapped subjects.
+    Supports .xlsx with professional two-tier styling and .csv.
+    """
+    from app.services.analytics_service import get_section_consolidated_sheet
+    data = get_section_consolidated_sheet(section_id)
+    section = data['section']
+    mappings = data['mappings']
+    students_data = data['students_data']
+    subject_stats = data['subject_stats']
+    overall_stats = data['overall_stats']
+
+    if format == 'csv':
+        rows = []
+        for idx, row in enumerate(students_data, 1):
+            r = {
+                'S.No': idx,
+                'Register Number': row['student'].register_number,
+                'Student Name': row['student'].student_name
+            }
+            for m in mappings:
+                subj_data = row['subjects'].get(m.id, {})
+                code = m.subject.subject_code
+                r[f"{code} ICA"] = subj_data.get('ica_disp', '-')
+                r[f"{code} TEE"] = subj_data.get('tee_disp', '-')
+                r[f"{code} Total"] = subj_data.get('total_score', '-')
+            r['Grand Total'] = row['grand_total_score']
+            r['Max Total'] = row['grand_total_max']
+            r['Percentage'] = f"{row['overall_percentage']}%"
+            r['Result'] = row['result']
+            r['Division'] = row['division']
+            rows.append(r)
+
+        df = pd.DataFrame(rows)
+        output = io.StringIO()
+        df.to_csv(output, index=False)
+        return io.BytesIO(output.getvalue().encode('utf-8'))
+
+    # Excel format with professional two-tier formatting
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Section Consolidated Marks"
+
+    # Title & Metadata
+    ws.merge_cells("A1:K1")
+    t_cell = ws["A1"]
+    t_cell.value = "ACADEMIC ASSESSMENT MANAGEMENT SYSTEM - CONSOLIDATED SECTION GRADE SHEET"
+    t_cell.font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+    t_cell.fill = PatternFill(start_color="1B365D", end_color="1B365D", fill_type="solid")
+    t_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 28
+
+    meta_text = (
+        f"Programme: {section.programme.name} ({section.programme.code}) | "
+        f"Semester: {section.semester.name} | Section: {section.name} | "
+        f"Academic Year: {section.academic_year.year_code} | "
+        f"Total Students: {overall_stats['total_students']} | "
+        f"Pass Rate: {overall_stats['class_pass_rate']}%"
+    )
+    ws.merge_cells("A2:K2")
+    m_cell = ws["A2"]
+    m_cell.value = meta_text
+    m_cell.font = Font(name="Calibri", size=10, italic=True, color="FFFFFF")
+    m_cell.fill = PatternFill(start_color="203764", end_color="203764", fill_type="solid")
+    m_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 20
+
+    # Header Row 1 (Tier 1) & Header Row 2 (Tier 2)
+    row1 = 4
+    row2 = 5
+    thin_border = Border(
+        left=Side(style='thin', color='CCCCCC'),
+        right=Side(style='thin', color='CCCCCC'),
+        top=Side(style='thin', color='CCCCCC'),
+        bottom=Side(style='thin', color='CCCCCC')
+    )
+    h_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    h_fill_navy = PatternFill(start_color="1B365D", end_color="1B365D", fill_type="solid")
+    h_fill_sub = PatternFill(start_color="2E5B88", end_color="2E5B88", fill_type="solid")
+
+    # Fixed starting columns: S.No, Reg No, Name
+    ws.merge_cells(start_row=row1, start_column=1, end_row=row2, end_column=1)
+    ws.cell(row=row1, column=1, value="S.No")
+    ws.merge_cells(start_row=row1, start_column=2, end_row=row2, end_column=2)
+    ws.cell(row=row1, column=2, value="Register Number")
+    ws.merge_cells(start_row=row1, start_column=3, end_row=row2, end_column=3)
+    ws.cell(row=row1, column=3, value="Student Name")
+
+    col_idx = 4
+    for m in mappings:
+        start_col = col_idx
+        end_col = col_idx + 2
+        ws.merge_cells(start_row=row1, start_column=start_col, end_row=row1, end_column=end_col)
+        top_cell = ws.cell(row=row1, column=start_col, value=f"{m.subject.subject_code}: {m.subject.subject_name}")
+        top_cell.font = h_font
+        top_cell.fill = h_fill_navy
+        top_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.cell(row=row2, column=start_col, value=f"ICA ({int(m.subject.ica_max)})")
+        ws.cell(row=row2, column=start_col + 1, value=f"TEE ({int(m.subject.tee_max)})")
+        ws.cell(row=row2, column=end_col, value="Total")
+        col_idx += 3
+
+    # Summary End Columns: Grand Total, Percentage, Result, Division
+    end_cols = ["Grand Total", "Overall %", "Result", "Division"]
+    for ec in end_cols:
+        ws.merge_cells(start_row=row1, start_column=col_idx, end_row=row2, end_column=col_idx)
+        c = ws.cell(row=row1, column=col_idx, value=ec)
+        c.font = h_font
+        c.fill = h_fill_navy
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        col_idx += 1
+
+    total_cols = col_idx - 1
+
+    # Style header cells
+    for r in [row1, row2]:
+        ws.row_dimensions[r].height = 22
+        for c in range(1, total_cols + 1):
+            cell = ws.cell(row=r, column=c)
+            cell.font = h_font
+            cell.border = thin_border
+            if not cell.fill or cell.fill.fill_type != 'solid':
+                cell.fill = h_fill_sub
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # Data Rows
+    current_row = 6
+    for idx, s_row in enumerate(students_data, 1):
+        ws.row_dimensions[current_row].height = 20
+        ws.cell(row=current_row, column=1, value=idx).alignment = Alignment(horizontal="center")
+        reg_c = ws.cell(row=current_row, column=2, value=s_row['student'].register_number)
+        reg_c.font = Font(name="Consolas", bold=True, color="1B365D")
+        reg_c.alignment = Alignment(horizontal="center")
+        ws.cell(row=current_row, column=3, value=s_row['student'].student_name)
+
+        c_pos = 4
+        for m in mappings:
+            subj_info = s_row['subjects'].get(m.id, {})
+            ica_c = ws.cell(row=current_row, column=c_pos, value=subj_info.get('ica_disp', '-'))
+            ica_c.alignment = Alignment(horizontal="center")
+
+            tee_c = ws.cell(row=current_row, column=c_pos + 1, value=subj_info.get('tee_disp', '-'))
+            tee_c.alignment = Alignment(horizontal="center")
+
+            tot_val = subj_info.get('total_score', '-')
+            tot_c = ws.cell(row=current_row, column=c_pos + 2, value=tot_val)
+            tot_c.alignment = Alignment(horizontal="center")
+            tot_c.font = Font(bold=True)
+            if subj_info.get('is_pass') is False:
+                tot_c.font = Font(bold=True, color="9C0006")
+                tot_c.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+
+            c_pos += 3
+
+        # Grand Totals
+        gt_c = ws.cell(row=current_row, column=c_pos, value=f"{s_row['grand_total_score']} / {s_row['grand_total_max']}")
+        gt_c.font = Font(bold=True)
+        gt_c.alignment = Alignment(horizontal="center")
+
+        pct_c = ws.cell(row=current_row, column=c_pos + 1, value=f"{s_row['overall_percentage']}%")
+        pct_c.font = Font(bold=True)
+        pct_c.alignment = Alignment(horizontal="center")
+
+        res_c = ws.cell(row=current_row, column=c_pos + 2, value=s_row['result'])
+        res_c.font = Font(bold=True)
+        res_c.alignment = Alignment(horizontal="center")
+        if s_row['result'] == 'PASS':
+            res_c.font = Font(bold=True, color="006100")
+            res_c.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        elif s_row['result'] == 'FAIL':
+            res_c.font = Font(bold=True, color="9C0006")
+            res_c.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+
+        div_c = ws.cell(row=current_row, column=c_pos + 3, value=s_row['division'])
+        div_c.alignment = Alignment(horizontal="center")
+
+        # Borders
+        for c in range(1, total_cols + 1):
+            ws.cell(row=current_row, column=c).border = thin_border
+
+        current_row += 1
+
+    # Class Average Row
+    ws.row_dimensions[current_row].height = 22
+    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=3)
+    avg_lbl = ws.cell(row=current_row, column=1, value="Class Average")
+    avg_lbl.font = Font(bold=True, color="1B365D")
+    avg_lbl.alignment = Alignment(horizontal="center", vertical="center")
+
+    c_pos = 4
+    for m in mappings:
+        st = subject_stats.get(m.id, {})
+        ws.cell(row=current_row, column=c_pos, value=st.get('avg_ica', '-')).alignment = Alignment(horizontal="center")
+        ws.cell(row=current_row, column=c_pos + 1, value=st.get('avg_tee', '-')).alignment = Alignment(horizontal="center")
+        t_c = ws.cell(row=current_row, column=c_pos + 2, value=st.get('avg_total', '-'))
+        t_c.font = Font(bold=True)
+        t_c.alignment = Alignment(horizontal="center")
+        c_pos += 3
+
+    ws.cell(row=current_row, column=c_pos, value="-").alignment = Alignment(horizontal="center")
+    c_avg_pct = ws.cell(row=current_row, column=c_pos + 1, value=f"{overall_stats['class_average_pct']}%")
+    c_avg_pct.font = Font(bold=True, color="1B365D")
+    c_avg_pct.alignment = Alignment(horizontal="center")
+    pass_rt = ws.cell(row=current_row, column=c_pos + 2, value=f"{overall_stats['class_pass_rate']}% Pass")
+    pass_rt.font = Font(bold=True, color="006100")
+    pass_rt.alignment = Alignment(horizontal="center")
+    ws.cell(row=current_row, column=c_pos + 3, value="-").alignment = Alignment(horizontal="center")
+
+    for c in range(1, total_cols + 1):
+        cell = ws.cell(row=current_row, column=c)
+        cell.border = thin_border
+        cell.fill = PatternFill(start_color="F2F4F8", end_color="F2F4F8", fill_type="solid")
+
+    auto_fit_columns(ws)
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output

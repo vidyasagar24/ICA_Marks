@@ -312,3 +312,253 @@ def get_subject_wise_analysis(subject_id, academic_year_id=None):
         'ica_avg': round(ica_avg, 2),
         'tee_avg': round(tee_avg, 2)
     }
+
+
+def get_section_consolidated_sheet(section_id):
+    """
+    Computes consolidated multi-subject grade sheet for a specific section.
+    Aggregates ICA, TEE, and Subject Totals across all mapped courses for each student.
+    """
+    section = Section.query.get_or_404(section_id)
+    students = Student.query.filter_by(section_id=section.id, status='Active').order_by(Student.register_number.asc()).all()
+    mappings = FacultySubjectMapping.query.filter_by(section_id=section.id, status='Active').order_by(FacultySubjectMapping.subject_id.asc()).all()
+
+    mapping_ids = [m.id for m in mappings]
+    all_assessments = Assessment.query.filter(
+        Assessment.mapping_id.in_(mapping_ids),
+        Assessment.is_active == True
+    ).order_by(Assessment.order_num.asc()).all() if mapping_ids else []
+
+    ass_by_mapping = {}
+    for a in all_assessments:
+        ass_by_mapping.setdefault(a.mapping_id, []).append(a)
+
+    all_marks = Mark.query.filter(Mark.mapping_id.in_(mapping_ids)).all() if mapping_ids else []
+    marks_map = {(m.mapping_id, m.student_id, m.assessment_id): m for m in all_marks}
+
+    # Determine which assessments have been conducted (have at least one entered mark)
+    conducted_assessments = {}
+    for m in mappings:
+        ass_list = ass_by_mapping.get(m.id, [])
+        ica_ass = next((a for a in ass_list if a.assessment_type == 'ICA' or 'ICA' in a.assessment_name.upper()), None)
+        tee_ass = next((a for a in ass_list if a.assessment_type == 'TEE' or 'TEE' in a.assessment_name.upper() or 'TERM END' in a.assessment_name.upper()), None)
+        
+        ica_held = False
+        if ica_ass:
+            ica_held = any(marks_map.get((m.id, s.id, ica_ass.id)) is not None for s in students)
+        if not ica_held:
+            # check internal assessments
+            internals = [a for a in ass_list if a != tee_ass and a != ica_ass]
+            ica_held = any(marks_map.get((m.id, s.id, a.id)) is not None for a in internals for s in students)
+
+        tee_held = False
+        if tee_ass:
+            tee_held = any(marks_map.get((m.id, s.id, tee_ass.id)) is not None for s in students)
+
+        conducted_assessments[m.id] = {
+            'ica_held': ica_held,
+            'tee_held': tee_held,
+            'ica_ass': ica_ass,
+            'tee_ass': tee_ass
+        }
+
+    students_data = []
+    subject_score_accum = {m.id: {'ica_scores': [], 'tee_scores': [], 'total_scores': [], 'passed': 0, 'failed': 0} for m in mappings}
+
+    for stu in students:
+        stu_subjects = {}
+        grand_total_score = 0.0
+        grand_total_max = 0.0
+        has_any_fail = False
+        has_any_score = False
+
+        for m in mappings:
+            ass_list = ass_by_mapping.get(m.id, [])
+            cond_info = conducted_assessments[m.id]
+            ica_ass = cond_info['ica_ass']
+            tee_ass = cond_info['tee_ass']
+            ica_held = cond_info['ica_held']
+            tee_held = cond_info['tee_held']
+
+            # 1. ICA Score calculation
+            ica_disp = '-'
+            ica_val = None
+            if ica_ass:
+                mk = marks_map.get((m.id, stu.id, ica_ass.id))
+                if mk:
+                    if mk.status == 'Absent':
+                        ica_disp = 'AB'
+                        ica_val = 0.0
+                    elif mk.status == 'Exempted':
+                        ica_disp = 'EX'
+                    elif mk.score is not None:
+                        ica_disp = f"{mk.score:g}"
+                        ica_val = mk.score
+            
+            # If explicit ICA assessment is not scored, fallback to sum of internal tests
+            if ica_val is None:
+                internals = [a for a in ass_list if a != tee_ass and a != ica_ass]
+                internal_scores = []
+                for a in internals:
+                    mk = marks_map.get((m.id, stu.id, a.id))
+                    if mk and mk.score is not None:
+                        internal_scores.append(mk.score)
+                if internal_scores:
+                    ica_val = sum(internal_scores)
+                    ica_disp = f"{ica_val:g}"
+
+            # 2. TEE Score calculation
+            tee_disp = '-'
+            tee_val = None
+            if tee_ass:
+                mk = marks_map.get((m.id, stu.id, tee_ass.id))
+                if mk:
+                    if mk.status == 'Absent':
+                        tee_disp = 'AB'
+                        tee_val = 0.0
+                    elif mk.status == 'Exempted':
+                        tee_disp = 'EX'
+                    elif mk.score is not None:
+                        tee_disp = f"{mk.score:g}"
+                        tee_val = mk.score
+
+            # 3. Subject Total & Percentage calculation based on conducted evaluations
+            subj_ica_max = (ica_ass.max_marks if ica_ass else m.subject.ica_max) or 50.0
+            subj_tee_max = (tee_ass.max_marks if tee_ass else m.subject.tee_max) or 100.0
+            
+            # Determine effective max marks for conducted portions
+            subj_effective_max = 0.0
+            if ica_held:
+                subj_effective_max += subj_ica_max
+            if tee_held:
+                subj_effective_max += subj_tee_max
+            if subj_effective_max == 0.0:
+                subj_effective_max = subj_ica_max + subj_tee_max
+
+            if ica_val is not None or tee_val is not None:
+                has_any_score = True
+                subj_total_score = (ica_val or 0.0) + (tee_val or 0.0)
+                grand_total_score += subj_total_score
+                grand_total_max += subj_effective_max
+                pct = round((subj_total_score / subj_effective_max * 100), 1) if subj_effective_max > 0 else 0.0
+                is_pass = (pct >= 40.0)
+                if not is_pass:
+                    has_any_fail = True
+
+                if ica_val is not None:
+                    subject_score_accum[m.id]['ica_scores'].append(ica_val)
+                if tee_val is not None:
+                    subject_score_accum[m.id]['tee_scores'].append(tee_val)
+                subject_score_accum[m.id]['total_scores'].append(subj_total_score)
+                if is_pass:
+                    subject_score_accum[m.id]['passed'] += 1
+                else:
+                    subject_score_accum[m.id]['failed'] += 1
+
+                stu_subjects[m.id] = {
+                    'ica_disp': ica_disp,
+                    'ica_max': subj_ica_max,
+                    'ica_held': ica_held,
+                    'tee_disp': tee_disp,
+                    'tee_max': subj_tee_max,
+                    'tee_held': tee_held,
+                    'total_score': round(subj_total_score, 1),
+                    'total_max': subj_effective_max,
+                    'percentage': pct,
+                    'is_pass': is_pass,
+                    'has_data': True
+                }
+            else:
+                grand_total_max += subj_effective_max
+                stu_subjects[m.id] = {
+                    'ica_disp': ica_disp,
+                    'ica_max': subj_ica_max,
+                    'ica_held': ica_held,
+                    'tee_disp': tee_disp,
+                    'tee_max': subj_tee_max,
+                    'tee_held': tee_held,
+                    'total_score': '-',
+                    'total_max': subj_effective_max,
+                    'percentage': '-',
+                    'is_pass': None,
+                    'has_data': False
+                }
+
+        # Overall student result & division
+        overall_pct = round((grand_total_score / grand_total_max * 100), 1) if grand_total_max > 0 else 0.0
+        if not has_any_score:
+            overall_result = 'PENDING'
+            division = '-'
+        elif has_any_fail or overall_pct < 40.0:
+            overall_result = 'FAIL'
+            division = 'Fail'
+        else:
+            overall_result = 'PASS'
+            if overall_pct >= 75.0:
+                division = 'Distinction'
+            elif overall_pct >= 60.0:
+                division = 'First Class'
+            elif overall_pct >= 50.0:
+                division = 'Second Class'
+            else:
+                division = 'Pass'
+
+        students_data.append({
+            'student': stu,
+            'subjects': stu_subjects,
+            'grand_total_score': round(grand_total_score, 1),
+            'grand_total_max': round(grand_total_max, 1),
+            'overall_percentage': overall_pct,
+            'result': overall_result,
+            'division': division
+        })
+
+    # Summary Statistics per Subject
+    subject_stats = {}
+    for m in mappings:
+        accum = subject_score_accum[m.id]
+        avg_ica = round(sum(accum['ica_scores']) / len(accum['ica_scores']), 1) if accum['ica_scores'] else '-'
+        avg_tee = round(sum(accum['tee_scores']) / len(accum['tee_scores']), 1) if accum['tee_scores'] else '-'
+        avg_tot = round(sum(accum['total_scores']) / len(accum['total_scores']), 1) if accum['total_scores'] else '-'
+        pass_cnt = accum['passed']
+        fail_cnt = accum['failed']
+        total_eval = pass_cnt + fail_cnt
+        pass_pct = round((pass_cnt / total_eval * 100), 1) if total_eval > 0 else '-'
+        highest = max(accum['total_scores']) if accum['total_scores'] else '-'
+
+        subject_stats[m.id] = {
+            'avg_ica': avg_ica,
+            'avg_tee': avg_tee,
+            'avg_total': avg_tot,
+            'pass_count': pass_cnt,
+            'fail_count': fail_cnt,
+            'pass_percentage': pass_pct,
+            'highest_score': highest
+        }
+
+    # Section Overall Stats
+    total_stus = len(students)
+    passed_students = sum(1 for s in students_data if s['result'] == 'PASS')
+    failed_students = sum(1 for s in students_data if s['result'] == 'FAIL')
+    avg_pct_list = [s['overall_percentage'] for s in students_data if s['result'] in ['PASS', 'FAIL']]
+    class_avg = round(sum(avg_pct_list) / len(avg_pct_list), 1) if avg_pct_list else 0.0
+    highest_pct = max(avg_pct_list) if avg_pct_list else 0.0
+    pass_rate = round((passed_students / total_stus * 100), 1) if total_stus > 0 else 0.0
+
+    overall_stats = {
+        'total_students': total_stus,
+        'passed_count': passed_students,
+        'failed_count': failed_students,
+        'class_pass_rate': pass_rate,
+        'class_average_pct': class_avg,
+        'highest_pct': highest_pct,
+        'total_subjects': len(mappings)
+    }
+
+    return {
+        'section': section,
+        'mappings': mappings,
+        'students_data': students_data,
+        'subject_stats': subject_stats,
+        'overall_stats': overall_stats
+    }
