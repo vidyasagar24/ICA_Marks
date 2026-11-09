@@ -8,13 +8,26 @@ IS_SERVERLESS = bool(os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNC
 
 if IS_SERVERLESS:
     INSTANCE_DIR = os.path.join(tempfile.gettempdir(), 'academic_assessment_instance')
+    try:
+        os.makedirs(INSTANCE_DIR, exist_ok=True)
+    except Exception:
+        INSTANCE_DIR = tempfile.gettempdir()
+        
+    sqlite_path = os.path.join(INSTANCE_DIR, 'academic_assessment.db').replace('\\', '/')
+    bundled_db = os.path.join(BASE_DIR, 'seed', 'academic_assessment.db')
+    if (not os.path.exists(sqlite_path) or os.path.getsize(sqlite_path) == 0) and os.path.exists(bundled_db):
+        import shutil
+        try:
+            shutil.copyfile(bundled_db, sqlite_path)
+        except Exception:
+            pass
 else:
     INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
-
-try:
-    os.makedirs(INSTANCE_DIR, exist_ok=True)
-except Exception:
-    INSTANCE_DIR = tempfile.gettempdir()
+    try:
+        os.makedirs(INSTANCE_DIR, exist_ok=True)
+    except Exception:
+        INSTANCE_DIR = tempfile.gettempdir()
+    sqlite_path = os.path.join(INSTANCE_DIR, 'academic_assessment.db').replace('\\', '/')
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'academic-assessment-system-super-secret-key-2026')

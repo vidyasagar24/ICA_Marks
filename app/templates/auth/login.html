@@ -126,9 +126,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  function fillCreds(u, p) {
+  function fillCreds(u, p, autoSubmit = true) {
     document.getElementById('username').value = u;
     document.getElementById('password').value = p;
+    if (autoSubmit) {
+      document.querySelector('form').submit();
+    }
   }
 </script>
 </body>

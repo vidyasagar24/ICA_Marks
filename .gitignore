@@ -19,6 +19,7 @@ instance/*.db
 instance/*.sqlite
 instance/*.sqlite3
 *.db
+!seed/academic_assessment.db
 *.sqlite3
 
 # Uploads and temporary exports
