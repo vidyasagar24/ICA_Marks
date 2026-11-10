@@ -685,6 +685,7 @@ def students():
                 log_action('IMPORT_STUDENTS', 'Student', updated_value={'added': added_count, 'duplicates_skipped': dup_count})
                 flash(f"Import complete: {added_count} students added. {dup_count} existing duplicates skipped.", 'success')
             except Exception as e:
+                db.session.rollback()
                 flash(f"Error parsing file: {str(e)}", 'danger')
 
             return redirect(url_for('admin.students'))

@@ -416,6 +416,7 @@ def api_import_students():
         db.session.commit()
         return api_response(True, f"Bulk import complete: {added} added, {skipped} duplicates skipped", data={"added": added, "skipped": skipped})
     except Exception as ex:
+        db.session.rollback()
         return api_response(False, f"Failed to parse file: {str(ex)}", status_code=400)
 
 

@@ -14,12 +14,15 @@ def login():
         return redirect(url_for('faculty.dashboard'))
 
     # Self-healing safeguard: ensure database tables & seed data are initialized
-    try:
-        if not User.query.filter_by(username='admin').first():
-            from seed_data import seed_database
-            seed_database(current_app)
-    except Exception as e:
-        current_app.logger.warning(f"Database auto-seed notice: {e}")
+    if not getattr(current_app, '_db_ready', False):
+        try:
+            if not User.query.with_entities(User.id).filter_by(username='admin').first():
+                from seed_data import seed_database
+                seed_database(current_app)
+            current_app._db_ready = True
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.warning(f"Database auto-seed notice: {e}")
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()

@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(20) NOT NULL DEFAULT 'faculty',
     faculty_id INT UNIQUE REFERENCES faculty(id) ON DELETE SET NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 7. Subjects Master
@@ -86,8 +87,8 @@ CREATE TABLE IF NOT EXISTS subjects (
 -- 8. Students
 CREATE TABLE IF NOT EXISTS students (
     id SERIAL PRIMARY KEY,
+    student_id_code VARCHAR(30) UNIQUE,
     register_number VARCHAR(30) NOT NULL UNIQUE,
-    student_id_code VARCHAR(30) NOT NULL UNIQUE,
     student_name VARCHAR(100) NOT NULL,
     programme_id INT NOT NULL REFERENCES programmes(id) ON DELETE CASCADE,
     academic_year_id INT NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,
@@ -160,38 +161,39 @@ CREATE TABLE IF NOT EXISTS submissions (
     id SERIAL PRIMARY KEY,
     mapping_id INT NOT NULL REFERENCES faculty_subject_mapping(id) ON DELETE CASCADE,
     assessment_id INT REFERENCES assessments(id) ON DELETE CASCADE,
-    submitted_by_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    submission_date TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    submitted_by_id INT REFERENCES users(id) ON DELETE SET NULL,
     status VARCHAR(30) NOT NULL DEFAULT 'Draft',
+    submission_date TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     reviewed_by_id INT REFERENCES users(id) ON DELETE SET NULL,
     review_date TIMESTAMP WITHOUT TIME ZONE,
-    review_comments TEXT
+    review_comments TEXT,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 14. Audit Logs
 CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
-    timestamp TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    user_id INT REFERENCES users(id) ON DELETE SET NULL,
-    user_name VARCHAR(80),
-    role VARCHAR(30),
-    action VARCHAR(80) NOT NULL,
+    user_id INT,
+    user_name VARCHAR(100) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    action VARCHAR(60) NOT NULL,
     entity_type VARCHAR(60) NOT NULL,
-    entity_id VARCHAR(50),
-    field_name VARCHAR(60),
-    old_value TEXT,
+    entity_id VARCHAR(60),
+    previous_value TEXT,
     updated_value TEXT,
-    ip_address VARCHAR(45)
+    ip_address VARCHAR(45),
+    timestamp TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS marks_audit (
-    id SERIAL PRIMARY KEY,
-    timestamp TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    audit_id SERIAL PRIMARY KEY,
     mark_id INT NOT NULL REFERENCES marks(id) ON DELETE CASCADE,
     old_marks DOUBLE PRECISION,
     new_marks DOUBLE PRECISION,
-    changed_by INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    reason VARCHAR(255)
+    changed_by INT REFERENCES users(id) ON DELETE SET NULL,
+    changed_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reason VARCHAR(500)
 );
 
 -- Indexes for high performance

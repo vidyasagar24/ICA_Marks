@@ -61,8 +61,8 @@ class Config:
 
     # If Supabase password is provided without full URL, construct pooled connection URI
     if not raw_db_url and supabase_db_password:
-        region = os.environ.get('SUPABASE_REGION', 'ap-south-1')
-        raw_db_url = f"postgresql://postgres.{SUPABASE_PROJECT_REF}:{supabase_db_password}@aws-0-{region}.pooler.supabase.com:6543/postgres?sslmode=require"
+        pooler_host = os.environ.get('SUPABASE_DB_HOST', f"aws-1-{os.environ.get('SUPABASE_REGION', 'us-east-2')}.pooler.supabase.com")
+        raw_db_url = f"postgresql://postgres.{SUPABASE_PROJECT_REF}:{supabase_db_password}@{pooler_host}:6543/postgres?sslmode=require"
 
     if raw_db_url:
         # Standardize postgres:// -> postgresql:// for SQLAlchemy compatibility
@@ -86,15 +86,18 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Connection Pool Management:
-    # Use NullPool for Supabase transaction pooler (port 6543) or serverless to avoid stale/leaked connections
-    if raw_db_url and (':6543' in raw_db_url or (IS_SERVERLESS and 'sqlite' not in SQLALCHEMY_DATABASE_URI)):
-        from sqlalchemy.pool import NullPool
-        SQLALCHEMY_ENGINE_OPTIONS = {
-            'poolclass': NullPool,
-            'pool_pre_ping': True
-        }
-    elif 'sqlite' in SQLALCHEMY_DATABASE_URI:
+    # psycopg2 uses client-side binding (compatible with Supavisor :6543), so a compact QueuePool
+    # prevents slow multi-second TLS handshakes on every single query while keeping connections minimal.
+    if 'sqlite' in SQLALCHEMY_DATABASE_URI:
         SQLALCHEMY_ENGINE_OPTIONS = {}
+    elif 'postgresql' in SQLALCHEMY_DATABASE_URI:
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_size': 2 if IS_SERVERLESS else 5,
+            'max_overflow': 2 if IS_SERVERLESS else 5,
+            'pool_recycle': 180 if IS_SERVERLESS else 280,
+            'pool_pre_ping': True,
+            'connect_args': {'connect_timeout': 10}
+        }
     else:
         SQLALCHEMY_ENGINE_OPTIONS = {
             'pool_recycle': 280,

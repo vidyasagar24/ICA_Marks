@@ -1,21 +1,48 @@
 import unittest
 import io
 import json
+import os
+import tempfile
 from datetime import datetime
 from app import create_app
+from app.config import Config
 from app.models import (
     db, User, Faculty, Student, StudentEnrollment, AcademicYear, Programme, Semester, Section,
     Subject, FacultySubjectMapping, Assessment, Mark, Submission, AuditLog, MarksAudit
 )
-from app.services.analytics_service import get_admin_dashboard_kpis, get_section_analysis, get_faculty_workload_analysis
-from app.services.excel_service import generate_assessment_template, parse_marks_upload, export_marks_sheet
-from app.services.pdf_service import generate_section_marks_pdf, generate_student_grade_card_pdf
+from app.services.analytics_service import (
+    get_admin_dashboard_kpis, get_section_analysis, get_faculty_workload_analysis, get_section_consolidated_sheet
+)
+from app.services.excel_service import (
+    generate_assessment_template, parse_marks_upload, export_marks_sheet, export_section_consolidated_excel
+)
+from app.services.pdf_service import (
+    generate_section_marks_pdf, generate_student_grade_card_pdf, generate_section_consolidated_pdf
+)
+
+_TEST_DB_FD, _TEST_DB_PATH = tempfile.mkstemp(prefix='aams_test_', suffix='.db')
+os.close(_TEST_DB_FD)
+
+
+class _IsolatedTestConfig(Config):
+    """Isolated SQLite test config so test runs never touch live Supabase."""
+    TESTING = True
+    WTF_CSRF_ENABLED = False
+    SQLALCHEMY_DATABASE_URI = f"sqlite:///{_TEST_DB_PATH.replace(chr(92), '/')}"
+    SQLALCHEMY_ENGINE_OPTIONS = {}
+
 
 class AcademicAssessmentSystemTestCase(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            if os.path.exists(_TEST_DB_PATH):
+                os.remove(_TEST_DB_PATH)
+        except OSError:
+            pass
+
     def setUp(self):
-        self.app = create_app()
-        self.app.config['TESTING'] = True
-        self.app.config['WTF_CSRF_ENABLED'] = False
+        self.app = create_app(_IsolatedTestConfig)
         self.client = self.app.test_client()
         self.ctx = self.app.app_context()
         self.ctx.push()
@@ -313,6 +340,21 @@ class AcademicAssessmentSystemTestCase(unittest.TestCase):
         pdf_bytes = generate_section_marks_pdf(mapping.id)
         self.assertIsNotNone(pdf_bytes)
         self.assertTrue(pdf_bytes.getvalue().startswith(b'%PDF'))
+
+    def test_15_section_consolidated_all_subjects_and_exports(self):
+        self.login('admin', 'Admin@123')
+        section = Section.query.filter_by(name='A').first()
+        res = self.client.get(f'/reports/consolidated?view_mode=section&section_id={section.id}')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'MA201', res.data)
+        self.assertIn(b'CE202', res.data)
+        self.assertIn(b'CE203', res.data)
+
+        for fmt in ['xlsx', 'csv', 'pdf']:
+            exp = self.client.get(f'/reports/export/section-consolidated/{section.id}/{fmt}')
+            self.assertEqual(exp.status_code, 200, f"Export {fmt} failed")
+            exp.close()
+        self.logout()
 
 if __name__ == '__main__':
     unittest.main()
