@@ -3,6 +3,13 @@ import tempfile
 
 BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 
+# Load environment variables from .env file if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, '.env'))
+except Exception:
+    pass
+
 # Detect serverless environment (e.g. Vercel, AWS Lambda) where root directory is read-only
 IS_SERVERLESS = bool(os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'))
 
@@ -32,8 +39,12 @@ else:
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'academic-assessment-system-super-secret-key-2026')
     
-    # Database Configuration: MySQL with SQLite fallback
-    # Example MySQL URI: mysql+pymysql://root:password@localhost:3306/academic_assessment_db
+    # Supabase Configuration
+    SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://fhhksgrxgbhikmoajspe.supabase.co')
+    SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'sb_publishable_M2Fit8dXdu2uBv02gxsTYg__2QZ53h_')
+    SUPABASE_PROJECT_REF = os.environ.get('SUPABASE_PROJECT_REF', 'fhhksgrxgbhikmoajspe')
+    
+    # Database Configuration: Supabase PostgreSQL / MySQL / SQLite
     DB_TYPE = os.environ.get('DB_TYPE', 'sqlite')
     MYSQL_HOST = os.environ.get('MYSQL_HOST', 'localhost')
     MYSQL_PORT = os.environ.get('MYSQL_PORT', '3306')
@@ -41,11 +52,28 @@ class Config:
     MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', '')
     MYSQL_DB = os.environ.get('MYSQL_DB', 'academic_assessment_db')
     
-    # Handle PostgreSQL URL scheme fix for SQLAlchemy 1.4+ (postgres:// -> postgresql://)
-    raw_db_url = os.environ.get('DATABASE_URL')
+    raw_db_url = (
+        os.environ.get('DATABASE_URL') or 
+        os.environ.get('SUPABASE_DB_URL') or 
+        os.environ.get('SUPABASE_DATABASE_URL')
+    )
+    supabase_db_password = os.environ.get('SUPABASE_DB_PASSWORD')
+
+    # If Supabase password is provided without full URL, construct pooled connection URI
+    if not raw_db_url and supabase_db_password:
+        region = os.environ.get('SUPABASE_REGION', 'ap-south-1')
+        raw_db_url = f"postgresql://postgres.{SUPABASE_PROJECT_REF}:{supabase_db_password}@aws-0-{region}.pooler.supabase.com:6543/postgres?sslmode=require"
+
     if raw_db_url:
+        # Standardize postgres:// -> postgresql:// for SQLAlchemy compatibility
         if raw_db_url.startswith('postgres://'):
             raw_db_url = raw_db_url.replace('postgres://', 'postgresql://', 1)
+        
+        # Ensure sslmode=require for Supabase remote PostgreSQL connections
+        if ('supabase.co' in raw_db_url or 'supabase.com' in raw_db_url) and 'sslmode=' not in raw_db_url:
+            delimiter = '&' if '?' in raw_db_url else '?'
+            raw_db_url = f"{raw_db_url}{delimiter}sslmode=require"
+
         SQLALCHEMY_DATABASE_URI = raw_db_url
     elif DB_TYPE.lower() == 'mysql':
         SQLALCHEMY_DATABASE_URI = (
@@ -56,10 +84,22 @@ class Config:
         SQLALCHEMY_DATABASE_URI = f"sqlite:///{sqlite_path}"
         
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_recycle': 280,
-        'pool_pre_ping': True
-    }
+    
+    # Connection Pool Management:
+    # Use NullPool for Supabase transaction pooler (port 6543) or serverless to avoid stale/leaked connections
+    if raw_db_url and (':6543' in raw_db_url or (IS_SERVERLESS and 'sqlite' not in SQLALCHEMY_DATABASE_URI)):
+        from sqlalchemy.pool import NullPool
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'poolclass': NullPool,
+            'pool_pre_ping': True
+        }
+    elif 'sqlite' in SQLALCHEMY_DATABASE_URI:
+        SQLALCHEMY_ENGINE_OPTIONS = {}
+    else:
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_recycle': 280,
+            'pool_pre_ping': True
+        }
     
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB max upload
     UPLOAD_FOLDER = os.path.join(INSTANCE_DIR, 'uploads')
