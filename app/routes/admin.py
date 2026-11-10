@@ -1,7 +1,6 @@
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file
 from flask_login import login_required, current_user
-import pandas as pd
 from app.models import (
     db, User, Faculty, Student, StudentEnrollment, AcademicYear, Programme, Semester, Section,
     Subject, FacultySubjectMapping, Assessment, Mark, Submission, AuditLog, MarksAudit
@@ -9,7 +8,6 @@ from app.models import (
 from app.utils.decorators import admin_required
 from app.services.audit_service import log_action
 from app.services.analytics_service import get_admin_dashboard_kpis, get_faculty_workload_analysis
-from app.services.excel_service import generate_student_import_template
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -621,6 +619,7 @@ def students():
                 return redirect(url_for('admin.students'))
 
             try:
+                import pandas as pd
                 if file.filename.lower().endswith('.csv'):
                     df = pd.read_csv(file)
                 else:
@@ -797,6 +796,7 @@ def students():
 @login_required
 @admin_required
 def download_student_template():
+    from app.services.excel_service import generate_student_import_template
     output = generate_student_import_template()
     return send_file(
         output,

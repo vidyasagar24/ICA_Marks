@@ -3,7 +3,6 @@ from datetime import datetime
 from functools import wraps
 from flask import Blueprint, jsonify, request, current_app
 from flask_login import login_user, logout_user, login_required, current_user
-import pandas as pd
 
 from app.models import (
     db, User, Faculty, Student, StudentEnrollment, AcademicYear, Programme,
@@ -14,7 +13,6 @@ from app.services.audit_service import log_action
 from app.services.analytics_service import (
     get_admin_dashboard_kpis, get_section_analysis, get_faculty_workload_analysis, get_subject_wise_analysis
 )
-from app.services.excel_service import parse_marks_upload
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -371,6 +369,7 @@ def api_import_students():
         return api_response(False, "File upload required", status_code=400)
 
     try:
+        import pandas as pd
         if file.filename.lower().endswith('.csv'):
             df = pd.read_csv(file)
         else:

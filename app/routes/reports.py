@@ -8,12 +8,6 @@ from app.services.analytics_service import (
     get_section_analysis, get_faculty_workload_analysis, get_subject_wise_analysis,
     get_section_consolidated_sheet
 )
-from app.services.pdf_service import (
-    generate_section_marks_pdf, generate_student_grade_card_pdf, generate_section_consolidated_pdf
-)
-from app.services.excel_service import (
-    export_marks_sheet, export_section_consolidated_excel
-)
 
 reports_bp = Blueprint('reports', __name__, url_prefix='/reports')
 
@@ -249,10 +243,12 @@ def export_section_consolidated_report(section_id, format):
 
     sec_name = f"{section.programme.code}_Sem{section.semester.number}_Sec{section.name}"
     if format == 'pdf':
+        from app.services.pdf_service import generate_section_consolidated_pdf
         output = generate_section_consolidated_pdf(section.id)
         filename = f"Consolidated_GradeSheet_{sec_name}.pdf"
         return send_file(output, download_name=filename, as_attachment=True, mimetype='application/pdf')
     elif format in ['xlsx', 'csv']:
+        from app.services.excel_service import export_section_consolidated_excel
         output = export_section_consolidated_excel(section.id, format=format)
         mime = 'text/csv' if format == 'csv' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         filename = f"Consolidated_Marks_{sec_name}.{format}"
@@ -267,10 +263,12 @@ def export_section_report(mapping_id, format):
         abort(403)
 
     if format == 'pdf':
+        from app.services.pdf_service import generate_section_marks_pdf
         output = generate_section_marks_pdf(mapping.id)
         filename = f"Report_{mapping.subject.subject_code}_{mapping.section.name}.pdf"
         return send_file(output, download_name=filename, as_attachment=True, mimetype='application/pdf')
     elif format in ['xlsx', 'csv']:
+        from app.services.excel_service import export_marks_sheet
         output = export_marks_sheet(mapping.id, format=format)
         mime = 'text/csv' if format == 'csv' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         filename = f"Report_{mapping.subject.subject_code}_{mapping.section.name}.{format}"
@@ -280,6 +278,7 @@ def export_section_report(mapping_id, format):
 @reports_bp.route('/export/student/<int:student_id>/pdf')
 @login_required
 def export_student_pdf(student_id):
+    from app.services.pdf_service import generate_student_grade_card_pdf
     student = Student.query.get_or_404(student_id)
     output = generate_student_grade_card_pdf(student.id)
     filename = f"Grade_Card_{student.register_number}.pdf"

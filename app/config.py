@@ -36,6 +36,52 @@ else:
         INSTANCE_DIR = tempfile.gettempdir()
     sqlite_path = os.path.join(INSTANCE_DIR, 'academic_assessment.db').replace('\\', '/')
 
+def _build_postgres_config(raw_url):
+    """Sanitize DATABASE_URL and return (sqlalchemy_uri, connect_args) for pure-Python pg8000."""
+    import ssl
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
+    url = raw_url.strip().strip('"').strip("'")
+    if url.startswith('DATABASE_URL='):
+        url = url[len('DATABASE_URL='):].strip().strip('"').strip("'")
+
+    # Normalize scheme to pure-Python pg8000 to avoid native libpq/glibc crashes on Vercel
+    for prefix in ('postgres://', 'postgresql+psycopg2://', 'postgresql+psycopg://', 'postgresql://'):
+        if url.startswith(prefix):
+            url = 'postgresql+pg8000://' + url[len(prefix):]
+            break
+
+    # Encode literal '@' if password was pasted unencoded
+    if '://' in url:
+        scheme, rest = url.split('://', 1)
+        auth_host, sep, path_q = rest.partition('/')
+        if auth_host.count('@') > 1:
+            creds, hostpart = auth_host.rsplit('@', 1)
+            url = f"{scheme}://{creds.replace('@', '%40')}@{hostpart}{sep}{path_q}"
+
+    parts = urlsplit(url)
+    sslmode_val = None
+    filtered_query = []
+    for k, v in parse_qsl(parts.query, keep_blank_values=True):
+        kl = k.lower()
+        if kl == 'sslmode':
+            sslmode_val = v.lower()
+        elif kl in ('pgbouncer', 'supa'):
+            continue
+        else:
+            filtered_query.append((k, v))
+
+    clean_uri = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(filtered_query), parts.fragment))
+    connect_args = {'timeout': 30}
+    if sslmode_val != 'disable' and ('supabase.' in clean_uri or sslmode_val is not None):
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connect_args['ssl_context'] = ssl_ctx
+
+    return clean_uri, connect_args
+
+
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'academic-assessment-system-super-secret-key-2026')
     
@@ -55,26 +101,22 @@ class Config:
     raw_db_url = (
         os.environ.get('DATABASE_URL') or 
         os.environ.get('SUPABASE_DB_URL') or 
-        os.environ.get('SUPABASE_DATABASE_URL')
-    )
-    supabase_db_password = os.environ.get('SUPABASE_DB_PASSWORD')
+        os.environ.get('SUPABASE_DATABASE_URL') or
+        ''
+    ).strip()
+    supabase_db_password = (os.environ.get('SUPABASE_DB_PASSWORD') or '').strip()
 
     # If Supabase password is provided without full URL, construct pooled connection URI
     if not raw_db_url and supabase_db_password:
         pooler_host = os.environ.get('SUPABASE_DB_HOST', f"aws-1-{os.environ.get('SUPABASE_REGION', 'us-east-2')}.pooler.supabase.com")
         raw_db_url = f"postgresql://postgres.{SUPABASE_PROJECT_REF}:{supabase_db_password}@{pooler_host}:6543/postgres?sslmode=require"
 
-    if raw_db_url:
-        # Standardize postgres:// -> postgresql:// for SQLAlchemy compatibility
-        if raw_db_url.startswith('postgres://'):
-            raw_db_url = raw_db_url.replace('postgres://', 'postgresql://', 1)
-        
-        # Ensure sslmode=require for Supabase remote PostgreSQL connections
-        if ('supabase.co' in raw_db_url or 'supabase.com' in raw_db_url) and 'sslmode=' not in raw_db_url:
-            delimiter = '&' if '?' in raw_db_url else '?'
-            raw_db_url = f"{raw_db_url}{delimiter}sslmode=require"
-
-        SQLALCHEMY_DATABASE_URI = raw_db_url
+    _pg_connect_args = None
+    if raw_db_url and '[YOUR-PASSWORD]' not in raw_db_url:
+        if raw_db_url.lstrip('"\' ').startswith(('postgres://', 'postgresql', 'DATABASE_URL=')):
+            SQLALCHEMY_DATABASE_URI, _pg_connect_args = _build_postgres_config(raw_db_url)
+        else:
+            SQLALCHEMY_DATABASE_URI = raw_db_url.strip().strip('"').strip("'")
     elif DB_TYPE.lower() == 'mysql':
         SQLALCHEMY_DATABASE_URI = (
             f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4"
@@ -86,8 +128,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Connection Pool Management:
-    # psycopg2 uses client-side binding (compatible with Supavisor :6543), so a compact QueuePool
-    # prevents slow multi-second TLS handshakes on every single query while keeping connections minimal.
+    # Compact QueuePool avoids slow TLS handshakes per query while capping serverless pooler usage.
     if 'sqlite' in SQLALCHEMY_DATABASE_URI:
         SQLALCHEMY_ENGINE_OPTIONS = {}
     elif 'postgresql' in SQLALCHEMY_DATABASE_URI:
@@ -96,7 +137,7 @@ class Config:
             'max_overflow': 2 if IS_SERVERLESS else 5,
             'pool_recycle': 180 if IS_SERVERLESS else 280,
             'pool_pre_ping': True,
-            'connect_args': {'connect_timeout': 10}
+            'connect_args': _pg_connect_args or {'timeout': 30}
         }
     else:
         SQLALCHEMY_ENGINE_OPTIONS = {

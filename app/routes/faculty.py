@@ -7,8 +7,6 @@ from app.models import (
 from app.utils.decorators import faculty_required
 from app.services.audit_service import log_action
 from app.services.analytics_service import get_faculty_workload_analysis, get_section_analysis
-from app.services.excel_service import generate_assessment_template, parse_marks_upload, export_marks_sheet
-from app.services.pdf_service import generate_section_marks_pdf
 
 faculty_bp = Blueprint('faculty', __name__, url_prefix='/faculty')
 
@@ -203,6 +201,7 @@ def marks_entry(mapping_id):
 @login_required
 @faculty_required
 def download_template(mapping_id):
+    from app.services.excel_service import generate_assessment_template
     mapping = check_faculty_allocation(mapping_id)
     output = generate_assessment_template(mapping.id)
     filename = f"Marks_Template_{mapping.subject.subject_code}_{mapping.section.name}.xlsx"
@@ -233,6 +232,7 @@ def upload_marks(mapping_id):
             flash('Please choose an Excel or CSV file to upload.', 'danger')
             return redirect(url_for('faculty.upload_marks', mapping_id=mapping.id))
 
+        from app.services.excel_service import parse_marks_upload
         result = parse_marks_upload(file, mapping.id)
 
         if not result['success']:
@@ -290,10 +290,12 @@ def export_marks(mapping_id, format):
     mapping = check_faculty_allocation(mapping_id)
 
     if format == 'pdf':
+        from app.services.pdf_service import generate_section_marks_pdf
         output = generate_section_marks_pdf(mapping.id)
         filename = f"Marks_{mapping.subject.subject_code}_{mapping.section.name}.pdf"
         return send_file(output, download_name=filename, as_attachment=True, mimetype='application/pdf')
     elif format in ['xlsx', 'csv']:
+        from app.services.excel_service import export_marks_sheet
         output = export_marks_sheet(mapping.id, format=format)
         mime = 'text/csv' if format == 'csv' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         filename = f"Marks_{mapping.subject.subject_code}_{mapping.section.name}.{format}"

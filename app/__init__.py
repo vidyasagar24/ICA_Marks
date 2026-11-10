@@ -77,10 +77,15 @@ def create_app(config_class=Config):
     # Ensure database is ready before handling any request (essential for serverless Vercel)
     @app.before_request
     def ensure_database_initialized():
+        from flask import request
+        if request.endpoint in ('index', 'static') and not request.cookies.get('session'):
+            return
         _ensure_db_ready()
 
-    # Auto-initialize database tables and seed sample data on startup
-    with app.app_context():
-        _ensure_db_ready()
+    # Auto-initialize eagerly only for local/test runs; serverless initializes lazily on first request
+    from app.config import IS_SERVERLESS
+    if not IS_SERVERLESS or app.config.get('TESTING'):
+        with app.app_context():
+            _ensure_db_ready()
 
     return app

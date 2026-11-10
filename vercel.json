@@ -1,4 +1,5 @@
 {
+  "regions": ["cle1"],
   "rewrites": [
     {
       "source": "/(.*)",
