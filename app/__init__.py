@@ -12,7 +12,11 @@ def create_app(config_class=Config):
 
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        try:
+            return User.query.get(int(user_id))
+        except Exception:
+            db.session.rollback()
+            return None
 
     # Register Blueprints
     from app.routes.auth import auth_bp
