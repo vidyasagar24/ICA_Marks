@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let internalScore = 0.0;
     let internalRawMax = 0.0;
     let hasInternalEntry = false;
+    let hasInternalExempt = false;
     let teeScore = 0.0;
     let teeMax = 0.0;
     let hasTeeEntry = false;
@@ -39,6 +40,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!isTee && !isExplicitIca) hasInternalEntry = true;
         if (isTee) hasTeeEntry = true;
       } else if (rawVal === 'EX') {
+        if (!isTee && !isExplicitIca) hasInternalExempt = true;
         // Exempted does not count against total max
       } else {
         const val = parseFloat(rawVal);
@@ -68,7 +70,9 @@ document.addEventListener('DOMContentLoaded', function () {
         ? (internalScore / internalRawMax) * icaMax
         : internalScore;
       if (icaCell) {
-        icaCell.textContent = hasInternalEntry ? scaledIca.toFixed(1).replace(/\.0$/, '') : '-';
+        icaCell.textContent = hasInternalEntry
+          ? scaledIca.toFixed(1).replace(/\.0$/, '')
+          : (hasInternalExempt ? 'EX' : '-');
       }
       finalScore = (hasInternalEntry ? scaledIca : 0) + (hasTeeEntry ? teeScore : 0);
       finalMax = icaMax + teeMax;

@@ -616,6 +616,7 @@ def export_section_consolidated_excel(section_id, format='xlsx'):
     mappings = data['mappings']
     students_data = data['students_data']
     subject_stats = data['subject_stats']
+    subject_meta = data.get('subject_meta', {})
     overall_stats = data['overall_stats']
 
     if format == 'csv':
@@ -704,9 +705,14 @@ def export_section_consolidated_excel(section_id, format='xlsx'):
         top_cell.fill = h_fill_navy
         top_cell.alignment = Alignment(horizontal="center", vertical="center")
 
-        ws.cell(row=row2, column=start_col, value=f"ICA ({int(m.subject.ica_max)})")
-        ws.cell(row=row2, column=start_col + 1, value=f"TEE ({int(m.subject.tee_max)})")
-        ws.cell(row=row2, column=end_col, value="Total")
+        s_meta = subject_meta.get(m.id, {})
+        h_ica = int(s_meta.get('ica_max', m.subject.ica_max))
+        h_tee_enabled = s_meta.get('tee_enabled', True)
+        h_tee = int(s_meta.get('tee_max', m.subject.tee_max))
+        h_tot = int(s_meta.get('display_total_max', h_ica + h_tee))
+        ws.cell(row=row2, column=start_col, value=f"ICA ({h_ica})")
+        ws.cell(row=row2, column=start_col + 1, value=f"TEE ({h_tee if h_tee_enabled else '-'})")
+        ws.cell(row=row2, column=end_col, value=f"Total ({h_tot})")
         col_idx += 3
 
     # Summary End Columns: Grand Total, Percentage, Result, Division

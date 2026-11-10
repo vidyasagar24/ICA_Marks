@@ -338,27 +338,50 @@ def get_section_consolidated_sheet(section_id):
 
     # Determine which assessments have been conducted (have at least one entered mark)
     from app.services.assessment_service import split_ica_assessments
+
+    def _has_mark_value(mk):
+        return mk is not None and (mk.score is not None or mk.status in ('Absent', 'Exempted'))
+
     conducted_assessments = {}
+    subject_meta = {}
     for m in mappings:
         ass_list = ass_by_mapping.get(m.id, [])
         internals, ica_ass, tee_ass = split_ica_assessments(ass_list)
-        
+
         ica_held = False
         if ica_ass:
-            ica_held = any(marks_map.get((m.id, s.id, ica_ass.id)) is not None for s in students)
+            ica_held = any(_has_mark_value(marks_map.get((m.id, s.id, ica_ass.id))) for s in students)
         if not ica_held:
-            ica_held = any(marks_map.get((m.id, s.id, a.id)) is not None for a in internals for s in students)
+            ica_held = any(_has_mark_value(marks_map.get((m.id, s.id, a.id))) for a in internals for s in students)
 
+        tee_enabled = (tee_ass is not None or not ass_list)
         tee_held = False
         if tee_ass:
-            tee_held = any(marks_map.get((m.id, s.id, tee_ass.id)) is not None for s in students)
+            tee_held = any(_has_mark_value(marks_map.get((m.id, s.id, tee_ass.id))) for s in students)
+
+        subj_ica_max = (ica_ass.max_marks if ica_ass else m.subject.ica_max) or 50.0
+        subj_tee_max = (tee_ass.max_marks if tee_ass else (m.subject.tee_max or 100.0)) if tee_enabled else 0.0
+        effective_display_max = (
+            (subj_ica_max if ica_held else 0.0) + (subj_tee_max if tee_held else 0.0)
+        ) or (subj_ica_max + subj_tee_max)
 
         conducted_assessments[m.id] = {
             'ica_held': ica_held,
             'tee_held': tee_held,
+            'tee_enabled': tee_enabled,
             'ica_ass': ica_ass,
             'tee_ass': tee_ass,
             'internals': internals,
+            'subj_ica_max': subj_ica_max,
+            'subj_tee_max': subj_tee_max,
+        }
+        subject_meta[m.id] = {
+            'ica_max': subj_ica_max,
+            'tee_max': subj_tee_max,
+            'tee_enabled': tee_enabled,
+            'ica_held': ica_held,
+            'tee_held': tee_held,
+            'display_total_max': effective_display_max,
         }
 
     students_data = []
@@ -380,8 +403,8 @@ def get_section_consolidated_sheet(section_id):
             ica_held = cond_info['ica_held']
             tee_held = cond_info['tee_held']
 
-            subj_ica_max = (ica_ass.max_marks if ica_ass else m.subject.ica_max) or 50.0
-            subj_tee_max = (tee_ass.max_marks if tee_ass else m.subject.tee_max) or 100.0
+            subj_ica_max = cond_info['subj_ica_max']
+            subj_tee_max = cond_info['subj_tee_max']
 
             # 1. ICA Score calculation
             ica_disp = '-'
@@ -577,5 +600,6 @@ def get_section_consolidated_sheet(section_id):
         'mappings': mappings,
         'students_data': students_data,
         'subject_stats': subject_stats,
+        'subject_meta': subject_meta,
         'overall_stats': overall_stats
     }

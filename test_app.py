@@ -456,5 +456,80 @@ class AcademicAssessmentSystemTestCase(unittest.TestCase):
         self.assertIn(b'Successfully imported', res_up.data)
         self.logout()
 
+    def test_19_renamed_ica_component_and_consolidated_ica_total(self):
+        # Reproduce renaming an existing 'ICA' assessment to 'Presentation' while type stays 'ICA',
+        # and verify both Faculty Portal and Admin Consolidated Sheets reflect full ICA total (not just Presentation).
+        from app.services.assessment_service import split_ica_assessments
+        from app.services.analytics_service import get_section_consolidated_sheet
+
+        self.login('faculty_a', 'Faculty@123')
+        fac_a = Faculty.query.filter_by(faculty_id_code='FAC001').first()
+        mapping = FacultySubjectMapping.query.filter_by(faculty_id=fac_a.id, status='Active').order_by(FacultySubjectMapping.id.desc()).first()
+        for s in Submission.query.filter_by(mapping_id=mapping.id).all():
+            s.status = 'Draft'
+        # Ensure mapping has a seeded 'ICA' row to test legacy rename behavior
+        if not Assessment.query.filter_by(mapping_id=mapping.id, assessment_name='ICA').first():
+            db.session.add(Assessment(mapping_id=mapping.id, assessment_name='ICA', assessment_type='ICA', max_marks=50.0, order_num=5, is_active=True))
+        db.session.commit()
+
+        all_ass = Assessment.query.filter_by(mapping_id=mapping.id, is_active=True).order_by(Assessment.order_num).all()
+        ica_row = next((a for a in all_ass if a.assessment_name.upper() == 'ICA'), None)
+        test1_row = next((a for a in all_ass if 'TEST 1' in a.assessment_name.upper()), all_ass[0])
+        test2_row = next((a for a in all_ass if 'TEST 2' in a.assessment_name.upper()), all_ass[1])
+        assign_row = next((a for a in all_ass if 'ASSIGN' in a.assessment_name.upper()), all_ass[2])
+        quiz_row = next((a for a in all_ass if 'QUIZ' in a.assessment_name.upper()), all_ass[3])
+
+        # Submit form renaming ICA -> Presentation while leaving type as 'ICA' and unchecking TEE
+        res_cfg = self.client.post(f'/faculty/allocations/{mapping.id}/ica-distribution', data={
+            'component_id[]': [str(test1_row.id), str(test2_row.id), str(assign_row.id), str(quiz_row.id), str(ica_row.id)],
+            'component_name[]': ['Test 1', 'Test 2', 'Assignment', 'Quiz', 'Presentation'],
+            'component_type[]': ['Test', 'Test', 'Assignment', 'Quiz', 'ICA'],
+            'component_max[]': ['10', '10', '10', '10', '10'],
+        }, follow_redirects=True)
+        self.assertEqual(res_cfg.status_code, 200)
+
+        active = Assessment.query.filter_by(mapping_id=mapping.id, is_active=True).order_by(Assessment.order_num).all()
+        pres = next((a for a in active if a.assessment_name == 'Presentation'), None)
+        self.assertIsNotNone(pres)
+        self.assertNotEqual(pres.assessment_type, 'ICA')
+
+        # Also simulate legacy DB state where Presentation still has assessment_type='ICA'
+        pres.assessment_type = 'ICA'
+        db.session.commit()
+        internals, explicit_ica, tee_ass = split_ica_assessments(active)
+        self.assertIsNone(explicit_ica)
+        self.assertIsNone(tee_ass)
+        self.assertEqual(len(internals), 5)
+
+        # Enter 9 + 5 + 9 + 5 + 4 = 32 for first student in section
+        stu = Student.query.filter_by(section_id=mapping.section_id, status='Active').order_by(Student.register_number.asc()).first()
+        Mark.query.filter_by(mapping_id=mapping.id, student_id=stu.id).delete()
+        for comp, val in zip(active, [9.0, 5.0, 9.0, 5.0, 4.0]):
+            db.session.add(Mark(student_id=stu.id, assessment_id=comp.id, mapping_id=mapping.id, score=val, status='Present'))
+        db.session.commit()
+
+        # Verify Faculty Marks Entry treats it as auto-ICA (no explicit standalone ICA column masking components)
+        res_marks = self.client.get(f'/faculty/allocations/{mapping.id}/marks')
+        self.assertEqual(res_marks.status_code, 200)
+        self.assertIn(b'data-has-explicit-ica="false"', res_marks.data)
+        self.logout()
+
+        # Verify Admin Consolidated Sheet shows ICA = 32 (not 4) and Total = 32.0 out of 50 (64.0% PASS)
+        sheet = get_section_consolidated_sheet(mapping.section_id)
+        stu_row = next(r for r in sheet['students_data'] if r['student'].id == stu.id)
+        subj_cell = stu_row['subjects'][mapping.id]
+        self.assertEqual(subj_cell['ica_disp'], '32')
+        self.assertEqual(subj_cell['tee_disp'], '-')
+        self.assertEqual(subj_cell['total_score'], 32.0)
+        self.assertEqual(subj_cell['total_max'], 50.0)
+        self.assertEqual(subj_cell['percentage'], 64.0)
+        self.assertTrue(subj_cell['is_pass'])
+
+        self.login('admin', 'Admin@123')
+        res_cons = self.client.get(f'/reports/consolidated?view_mode=section&section_id={mapping.section_id}')
+        self.assertEqual(res_cons.status_code, 200)
+        self.assertIn(b'Total <span class="d-block text-secondary fw-normal" style="font-size: 0.68rem;">(50)</span>', res_cons.data)
+        self.logout()
+
 if __name__ == '__main__':
     unittest.main()

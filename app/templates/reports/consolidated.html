@@ -188,14 +188,19 @@
             <!-- Tier 2 Headers: Sub-columns per Subject -->
             <tr class="text-center align-middle" style="font-size: 0.78rem;">
               {% for m in consolidated_data.mappings %}
+                {% set s_meta = consolidated_data.subject_meta.get(m.id, {}) %}
+                {% set h_ica_max = s_meta.get('ica_max', m.subject.ica_max) %}
+                {% set h_tee_enabled = s_meta.get('tee_enabled', True) %}
+                {% set h_tee_max = s_meta.get('tee_max', m.subject.tee_max) %}
+                {% set h_tot_max = s_meta.get('display_total_max', h_ica_max + h_tee_max) %}
                 <th class="border-start text-muted bg-white" style="width: 65px;">
-                  ICA <span class="d-block text-secondary" style="font-size: 0.68rem;">({{ m.subject.ica_max|int }})</span>
+                  ICA <span class="d-block text-secondary" style="font-size: 0.68rem;">({{ h_ica_max|int }})</span>
                 </th>
                 <th class="text-muted bg-white" style="width: 65px;">
-                  TEE <span class="d-block text-secondary" style="font-size: 0.68rem;">({{ m.subject.tee_max|int }})</span>
+                  TEE <span class="d-block text-secondary" style="font-size: 0.68rem;">({% if h_tee_enabled %}{{ h_tee_max|int }}{% else %}-{% endif %})</span>
                 </th>
                 <th class="border-end fw-bold bg-white text-dark" style="width: 75px;">
-                  Total <span class="d-block text-secondary fw-normal" style="font-size: 0.68rem;">({{ (m.subject.ica_max + m.subject.tee_max)|int }})</span>
+                  Total <span class="d-block text-secondary fw-normal" style="font-size: 0.68rem;">({{ h_tot_max|int }})</span>
                 </th>
               {% endfor %}
             </tr>

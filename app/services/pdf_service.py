@@ -250,6 +250,7 @@ def generate_section_consolidated_pdf(section_id):
     mappings = data['mappings']
     students_data = data['students_data']
     subject_stats = data['subject_stats']
+    subject_meta = data.get('subject_meta', {})
     overall_stats = data['overall_stats']
 
     buffer = io.BytesIO()
@@ -364,10 +365,15 @@ def generate_section_consolidated_pdf(section_id):
             Paragraph("", th_style),
             Paragraph("", th_style)
         ])
+        s_meta = subject_meta.get(m.id, {})
+        h_ica = int(s_meta.get('ica_max', m.subject.ica_max))
+        h_tee_enabled = s_meta.get('tee_enabled', True)
+        h_tee = int(s_meta.get('tee_max', m.subject.tee_max))
+        h_tot = int(s_meta.get('display_total_max', h_ica + h_tee))
         tier2.extend([
-            Paragraph(f"ICA ({int(m.subject.ica_max)})", th_style),
-            Paragraph(f"TEE ({int(m.subject.tee_max)})", th_style),
-            Paragraph("Total", th_style)
+            Paragraph(f"ICA ({h_ica})", th_style),
+            Paragraph(f"TEE ({h_tee if h_tee_enabled else '-'})", th_style),
+            Paragraph(f"Total ({h_tot})", th_style)
         ])
 
     tier1.extend([
@@ -672,6 +678,7 @@ def generate_section_consolidated_pdf(section_id):
     mappings = data['mappings']
     students_data = data['students_data']
     subject_stats = data['subject_stats']
+    subject_meta = data.get('subject_meta', {})
     overall_stats = data['overall_stats']
 
     buffer = io.BytesIO()
@@ -786,10 +793,15 @@ def generate_section_consolidated_pdf(section_id):
             Paragraph("", th_style),
             Paragraph("", th_style)
         ])
+        s_meta = subject_meta.get(m.id, {})
+        h_ica = int(s_meta.get('ica_max', m.subject.ica_max))
+        h_tee_enabled = s_meta.get('tee_enabled', True)
+        h_tee = int(s_meta.get('tee_max', m.subject.tee_max))
+        h_tot = int(s_meta.get('display_total_max', h_ica + h_tee))
         tier2.extend([
-            Paragraph(f"ICA ({int(m.subject.ica_max)})", th_style),
-            Paragraph(f"TEE ({int(m.subject.tee_max)})", th_style),
-            Paragraph("Total", th_style)
+            Paragraph(f"ICA ({h_ica})", th_style),
+            Paragraph(f"TEE ({h_tee if h_tee_enabled else '-'})", th_style),
+            Paragraph(f"Total ({h_tot})", th_style)
         ])
 
     tier1.extend([

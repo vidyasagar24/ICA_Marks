@@ -3,7 +3,47 @@ Assessment Configuration & ICA Distribution Service
 Supports faculty-configurable ICA mark distributions (Test1, Test2, Quiz, Assignment, Lab, etc.)
 and balanced defaults per subject ICA/TEE limits.
 """
+import re
 from app.models import db, Assessment, Mark
+
+_STANDALONE_ICA_NAMES = {'ICA', 'DIRECTICA', 'INTERNAL', 'INTERNALASSESSMENT', 'TOTALICA', 'ICATOTAL'}
+
+
+def _canon_ass_name(name):
+    return re.sub(r'[^A-Z0-9]', '', str(name or '').upper())
+
+
+def _is_tee_assessment(ass):
+    upper = (ass.assessment_name or '').strip().upper()
+    return (
+        ass.assessment_type == 'TEE'
+        or 'TEE' in upper
+        or 'TERM END' in upper
+        or upper in ('END SEM', 'FINAL EXAM')
+    )
+
+
+def _infer_component_type(name):
+    c = _canon_ass_name(name)
+    if 'PRESENT' in c:
+        return 'Presentation'
+    if 'SEMINAR' in c:
+        return 'Seminar'
+    if 'QUIZ' in c:
+        return 'Quiz'
+    if 'ASSIGN' in c or 'ASSG' in c:
+        return 'Assignment'
+    if 'MID' in c:
+        return 'Mid-Term'
+    if 'LAB' in c or 'PRAC' in c:
+        return 'Lab'
+    if 'PROJECT' in c:
+        return 'Project'
+    if 'ATTEND' in c:
+        return 'Attendance'
+    if 'TEST' in c or c.startswith(('T1', 'T2', 'T3', 'UT', 'CT')):
+        return 'Test'
+    return 'Other'
 
 
 def _alloc_weights(total_max, ratios):
@@ -96,15 +136,19 @@ def seed_default_assessments_for_mapping(mapping):
 
 def split_ica_assessments(assessments):
     """Separate active assessments into (internal_components, explicit_ica_ass, tee_ass)."""
+    tee_ass = next((a for a in assessments if _is_tee_assessment(a)), None)
+    non_tee = [a for a in assessments if a != tee_ass]
+
+    # Only treat an assessment as a standalone ICA summary column if its name is explicitly ICA
+    # or it is the sole non-TEE assessment typed as ICA (prevents renamed sub-components like 'Presentation' masking totals).
     explicit_ica = next(
-        (a for a in assessments if a.assessment_type == 'ICA' or a.assessment_name.strip().upper() == 'ICA'),
+        (a for a in non_tee if _canon_ass_name(a.assessment_name) in _STANDALONE_ICA_NAMES),
         None
     )
-    tee_ass = next(
-        (a for a in assessments if a.assessment_type == 'TEE' or 'TEE' in a.assessment_name.upper() or 'TERM END' in a.assessment_name.upper()),
-        None
-    )
-    internals = [a for a in assessments if a != explicit_ica and a != tee_ass]
+    if explicit_ica is None and len(non_tee) == 1 and non_tee[0].assessment_type == 'ICA':
+        explicit_ica = non_tee[0]
+
+    internals = [a for a in non_tee if a != explicit_ica]
     return internals, explicit_ica, tee_ass
 
 
@@ -135,6 +179,11 @@ def save_faculty_ica_distribution(mapping, components, include_tee=True, tee_max
             raise ValueError(f"Maximum marks for '{name}' must be greater than 0.")
 
         atype = (comp.get('type') or 'Test').strip()
+        # Prevent renamed legacy 'ICA' rows (e.g. 'Presentation') from staying typed as 'ICA' alongside other components
+        if atype == 'ICA' and _canon_ass_name(name) not in _STANDALONE_ICA_NAMES:
+            atype = _infer_component_type(name)
+        elif atype == 'ICA' and len([c for c in components if (c.get('name') or '').strip()]) > 1:
+            atype = _infer_component_type(name)
         comp_id = comp.get('id')
 
         target = None

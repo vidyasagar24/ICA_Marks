@@ -88,7 +88,7 @@
                 </td>
                 <td>
                   <select name="component_type[]" class="form-select form-select-sm" {% if is_locked %}disabled{% endif %}>
-                    {% for t in ['Test', 'Quiz', 'Assignment', 'Mid-Term', 'Lab', 'Project', 'Seminar', 'Attendance', 'ICA', 'Other'] %}
+                    {% for t in ['Test', 'Quiz', 'Assignment', 'Mid-Term', 'Lab', 'Project', 'Presentation', 'Seminar', 'Attendance', 'ICA', 'Other'] %}
                       <option value="{{ t }}" {% if a.assessment_type == t %}selected{% endif %}>{{ t }}</option>
                     {% endfor %}
                   </select>
@@ -147,7 +147,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const sumValEl = document.getElementById('icaSumVal');
   const sumBadge = document.getElementById('icaSumBadge');
   const targetMax = parseFloat(document.getElementById('targetIcaMax').dataset.max) || 50;
-  const types = ['Test', 'Quiz', 'Assignment', 'Mid-Term', 'Lab', 'Project', 'Seminar', 'Attendance', 'ICA', 'Other'];
+  const types = ['Test', 'Quiz', 'Assignment', 'Mid-Term', 'Lab', 'Project', 'Presentation', 'Seminar', 'Attendance', 'ICA', 'Other'];
 
   function recalcTotal() {
     let total = 0;
@@ -188,7 +188,25 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   tbody.addEventListener('input', function (e) {
-    if (e.target.classList.contains('comp-max-input')) recalcTotal();
+    if (e.target.classList.contains('comp-max-input')) {
+      recalcTotal();
+    } else if (e.target.name === 'component_name[]') {
+      const row = e.target.closest('tr');
+      const sel = row ? row.querySelector('select[name="component_type[]"]') : null;
+      const val = e.target.value.trim().toUpperCase();
+      if (sel && sel.value === 'ICA' && val && val !== 'ICA') {
+        if (val.includes('PRESENT')) sel.value = 'Presentation';
+        else if (val.includes('SEMINAR')) sel.value = 'Seminar';
+        else if (val.includes('QUIZ')) sel.value = 'Quiz';
+        else if (val.includes('ASSIGN')) sel.value = 'Assignment';
+        else if (val.includes('LAB') || val.includes('PRAC')) sel.value = 'Lab';
+        else if (val.includes('PROJECT')) sel.value = 'Project';
+        else if (val.includes('MID')) sel.value = 'Mid-Term';
+        else if (val.includes('ATTEND')) sel.value = 'Attendance';
+        else if (val.includes('TEST')) sel.value = 'Test';
+        else sel.value = 'Other';
+      }
+    }
   });
 
   tbody.addEventListener('click', function (e) {
