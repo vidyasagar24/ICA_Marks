@@ -4,23 +4,40 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const mappingId = table.dataset.mappingId;
   const isLocked = table.dataset.isLocked === 'true';
+  const icaMax = parseFloat(table.dataset.icaMax) || 50;
+  const hasExplicitIca = table.dataset.hasExplicitIca === 'true';
   const inputs = table.querySelectorAll('.marks-input');
 
   function updateRowCalculations(row) {
     const studentInputs = row.querySelectorAll('.marks-input');
     let totalScore = 0.0;
     let totalMax = 0.0;
-    let missingCount = 0;
+    let internalScore = 0.0;
+    let internalRawMax = 0.0;
+    let hasInternalEntry = false;
+    let teeScore = 0.0;
+    let teeMax = 0.0;
+    let hasTeeEntry = false;
 
     studentInputs.forEach(input => {
       const maxMarks = parseFloat(input.dataset.maxMarks) || 0;
+      const assType = (input.dataset.assType || '').toUpperCase();
       const rawVal = input.value.trim().toUpperCase();
+      const isTee = (assType === 'TEE');
+      const isExplicitIca = (assType === 'ICA');
+
+      if (!isTee && !isExplicitIca) {
+        internalRawMax += maxMarks;
+      } else if (isTee) {
+        teeMax += maxMarks;
+      }
 
       if (rawVal === '' || rawVal === '-') {
-        missingCount++;
         totalMax += maxMarks;
       } else if (rawVal === 'AB') {
         totalMax += maxMarks;
+        if (!isTee && !isExplicitIca) hasInternalEntry = true;
+        if (isTee) hasTeeEntry = true;
       } else if (rawVal === 'EX') {
         // Exempted does not count against total max
       } else {
@@ -28,19 +45,45 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!isNaN(val)) {
           totalScore += val;
           totalMax += maxMarks;
+          if (!isTee && !isExplicitIca) {
+            internalScore += val;
+            hasInternalEntry = true;
+          } else if (isTee) {
+            teeScore += val;
+            hasTeeEntry = true;
+          }
         }
       }
     });
 
+    const icaCell = row.querySelector('.row-ica-score');
     const totalCell = row.querySelector('.row-total-score');
     const pctCell = row.querySelector('.row-percentage');
 
+    let finalScore = totalScore;
+    let finalMax = totalMax;
+
+    if (!hasExplicitIca && internalRawMax > 0) {
+      const scaledIca = Math.abs(internalRawMax - icaMax) > 0.01
+        ? (internalScore / internalRawMax) * icaMax
+        : internalScore;
+      if (icaCell) {
+        icaCell.textContent = hasInternalEntry ? scaledIca.toFixed(1).replace(/\.0$/, '') : '-';
+      }
+      finalScore = (hasInternalEntry ? scaledIca : 0) + (hasTeeEntry ? teeScore : 0);
+      finalMax = icaMax + teeMax;
+    }
+
     if (totalCell) {
-      totalCell.textContent = totalScore.toFixed(1).replace(/\.0$/, '');
+      totalCell.textContent = finalScore.toFixed(1).replace(/\.0$/, '');
     }
 
     if (pctCell) {
-      if (totalMax > 0) {
+      if (finalMax > 0 && (hasInternalEntry || hasTeeEntry || hasExplicitIca)) {
+        const pct = (finalScore / finalMax) * 100;
+        pctCell.textContent = pct.toFixed(1) + '%';
+        pctCell.className = 'row-percentage fw-bold ' + (pct >= 50 ? 'text-success' : (pct >= 40 ? 'text-warning' : 'text-danger'));
+      } else if (hasExplicitIca && totalMax > 0) {
         const pct = (totalScore / totalMax) * 100;
         pctCell.textContent = pct.toFixed(1) + '%';
         pctCell.className = 'row-percentage fw-bold ' + (pct >= 50 ? 'text-success' : (pct >= 40 ? 'text-warning' : 'text-danger'));

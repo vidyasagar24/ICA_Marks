@@ -17,9 +17,31 @@
       {{ mapping.programme.code }} Sem {{ mapping.semester.number }} Sec {{ mapping.section.name }}
     </p>
   </div>
-  <a href="{{ url_for('faculty.download_template', mapping_id=mapping.id) }}" class="btn btn-outline-primary btn-sm">
-    <i class="fa-solid fa-download me-1"></i> Download Pre-filled Template (.xlsx)
-  </a>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="{{ url_for('faculty.ica_distribution', mapping_id=mapping.id) }}" class="btn btn-outline-secondary btn-sm">
+      <i class="fa-solid fa-sliders me-1"></i> Customize ICA Distribution
+    </a>
+    <a href="{{ url_for('faculty.download_template', mapping_id=mapping.id) }}" class="btn btn-outline-primary btn-sm">
+      <i class="fa-solid fa-download me-1"></i> Download Pre-filled Template (.xlsx)
+    </a>
+  </div>
+</div>
+
+<!-- Active Configured Columns Banner -->
+<div class="card card-custom mb-4 border-0 shadow-sm">
+  <div class="card-body py-2 px-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div class="small">
+      <span class="fw-semibold text-muted me-2"><i class="fa-solid fa-columns me-1 text-primary"></i>Configured Assessment Columns:</span>
+      {% for a in assessments %}
+        <span class="badge bg-light text-dark border me-1">
+          {{ a.assessment_name }} <span class="text-muted">(Max: {{ a.max_marks|int if a.max_marks.is_integer() else a.max_marks }})</span>
+        </span>
+      {% endfor %}
+    </div>
+    <a href="{{ url_for('faculty.ica_distribution', mapping_id=mapping.id) }}" class="small text-primary text-decoration-none fw-semibold">
+      Edit ICA Components &rarr;
+    </a>
+  </div>
 </div>
 
 {% if is_locked %}
@@ -36,11 +58,18 @@
       </div>
       <div class="card-body p-4">
         <form method="POST" action="{{ url_for('faculty.upload_marks', mapping_id=mapping.id) }}" enctype="multipart/form-data">
-          <div class="mb-4 text-center p-4 border border-2 border-dashed rounded-3 bg-light">
+          <div class="mb-3 text-center p-4 border border-2 border-dashed rounded-3 bg-light">
             <i class="fa-solid fa-file-excel text-success fs-1 mb-3"></i>
             <h6>Select Excel (.xlsx, .xls) or CSV File</h6>
-            <p class="text-muted small mb-3">Ensure you use the template downloaded from this portal.</p>
+            <p class="text-muted small mb-3">Supports portal templates or your own Excel/CSV with <code>Register Number</code> &amp; score columns (e.g. <code>Test1</code>, <code>Test2</code>, <code>Quiz</code>, <code>Assignment</code>).</p>
             <input type="file" name="file" class="form-control" accept=".xlsx,.xls,.csv" required {% if is_locked %}disabled{% endif %}>
+          </div>
+
+          <div class="form-check mb-4">
+            <input class="form-check-input" type="checkbox" name="auto_create_components" id="autoCreateCols" value="1" checked {% if is_locked %}disabled{% endif %}>
+            <label class="form-check-label small text-muted" for="autoCreateCols">
+              Automatically add unrecognized mark columns from spreadsheet as custom ICA components (recommended if uploading your own sheet).
+            </label>
           </div>
 
           <div class="d-flex justify-content-between align-items-center">

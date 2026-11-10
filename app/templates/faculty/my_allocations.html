@@ -51,6 +51,10 @@
                 <a href="{{ url_for('faculty.marks_entry', mapping_id=a.mapping.id) }}" class="btn btn-primary-custom" title="Enter Marks">
                   <i class="fa-solid fa-pen-to-square me-1"></i> Marks Entry
                 </a>
+                <!-- Configure ICA Distribution -->
+                <a href="{{ url_for('faculty.ica_distribution', mapping_id=a.mapping.id) }}" class="btn btn-outline-primary" title="Configure ICA Distribution">
+                  <i class="fa-solid fa-sliders"></i>
+                </a>
                 <!-- Excel Upload -->
                 <a href="{{ url_for('faculty.upload_marks', mapping_id=a.mapping.id) }}" class="btn btn-outline-success" title="Excel Upload">
                   <i class="fa-solid fa-file-excel"></i>

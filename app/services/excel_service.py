@@ -1,9 +1,206 @@
 import io
+import re
+import math
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
-from app.models import Student, Assessment, Mark, FacultySubjectMapping
+from app.models import db, Student, Assessment, Mark, FacultySubjectMapping
+
+
+def normalize_reg_no(val):
+    """Normalize student register numbers across Excel/CSV types (strips trailing .0 on numeric IDs)."""
+    if val is None:
+        return ''
+    if isinstance(val, int) and not isinstance(val, bool):
+        return str(val).strip().upper()
+    if isinstance(val, float):
+        if pd.isna(val):
+            return ''
+        if val.is_integer():
+            return str(int(val)).strip().upper()
+    s = str(val).strip()
+    if s.endswith('.0') and s[:-2].lstrip('-').isdigit():
+        s = s[:-2]
+    return s.upper()
+
+
+def _canon_key(text):
+    return re.sub(r'[^A-Z0-9]', '', str(text or '').upper())
+
+
+def _is_reg_header(val):
+    """Match a column header cell representing student register/roll number (ignores prose/instructions rows)."""
+    raw = str(val or '').strip()
+    if not raw or len(raw) > 45:
+        return False
+    base = re.split(r'[\n\(\[/]', raw, maxsplit=1)[0].strip()
+    u = _canon_key(base)
+    return u in {
+        'REGISTERNUMBER', 'REGISTERNO', 'REGNO', 'REGNUMBER', 'REG',
+        'ROLLNO', 'ROLLNUMBER', 'STUDENTID', 'STUDENTIDCODE', 'PRN', 'SAPID', 'UID'
+    }
+
+
+_SKIP_UPLOAD_COLS = {
+    'SNO', 'SRNO', 'SERIAL', 'SERIALNO', 'SLNO', 'SL', 'NO',
+    'NAME', 'STUDENTNAME', 'EMAIL', 'EMAILID', 'MAIL', 'PHONE', 'MOBILE',
+    'TOTAL', 'TOTALSCORE', 'TOTALSCORED', 'GRANDTOTAL', 'MAX', 'MAXTOTAL', 'MAXMARKS',
+    'PERCENTAGE', 'PCT', 'RESULT', 'GRADE', 'DIVISION', 'STATUS', 'REMARKS',
+    'PASSFAIL', 'SECTION', 'SEMESTER', 'PROGRAMME', 'BRANCH', 'COURSE', 'SUBJECT', 'SUBJECTCODE', 'FACULTY'
+}
+
+_ALIAS_GROUPS = [
+    {'TEST1', 'T1', 'UT1', 'CT1', 'IA1', 'MID1', 'UNITTEST1'},
+    {'TEST2', 'T2', 'UT2', 'CT2', 'IA2', 'MID2', 'UNITTEST2'},
+    {'TEST3', 'T3', 'UT3', 'CT3', 'IA3', 'UNITTEST3'},
+    {'QUIZ', 'QUIZ1', 'Q1'},
+    {'QUIZ2', 'Q2'},
+    {'ASSIGNMENT', 'ASSIGNMENTS', 'ASSIGN', 'ASSG', 'ASSGN', 'HW'},
+    {'TEE', 'TERMEND', 'TERMENDEXAM', 'TERMENDEXAMINATION', 'ENDSEM', 'ESE', 'FINAL', 'FINALEXAM', 'THEORY', 'WRITTENEXAM'},
+    {'ICA', 'INTERNAL', 'IA', 'INTERNALASSESSMENT', 'CONTINUOUSASSESSMENT'},
+    {'MIDTERM', 'MIDSEM', 'MSE', 'MIDTERMEXAM', 'MIDTERMTEST'},
+    {'LAB', 'LABPRACTICAL', 'PRACTICAL', 'PRAC'},
+]
+
+
+def _extract_header_meta(col_header):
+    """Extract clean assessment base name and optional max marks hint from column header."""
+    raw = str(col_header or '').strip()
+    max_hint = None
+    m = re.search(
+        r'(?:MAX\s*[:\-]\s*|/\s*|\(\s*(?:MAX\s*[:\-]?\s*)?|\[\s*(?:MAX\s*[:\-]?\s*)?)(\d+(?:\.\d+)?)\s*[\)\]]?\s*$',
+        raw,
+        flags=re.IGNORECASE
+    )
+    if m:
+        try:
+            val = float(m.group(1))
+            if val > 0:
+                max_hint = val
+        except ValueError:
+            pass
+    base = raw.split('\n')[0]
+    base = re.split(r'[\(\[/]|MAX\s*:', base, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    return base, max_hint
+
+
+def _match_assessment(base_name, assessments):
+    """Match an uploaded column header flexibly against active assessments for the course."""
+    upper = base_name.strip().upper()
+    canon = _canon_key(base_name)
+    if not canon:
+        return None
+
+    # 1. Exact case-insensitive match
+    for a in assessments:
+        if a.assessment_name.strip().upper() == upper:
+            return a
+
+    # 2. Alphanumeric canonical match (e.g. 'Test1' <-> 'Test 1', 'Quiz1' <-> 'Quiz 1')
+    for a in assessments:
+        if _canon_key(a.assessment_name) == canon:
+            return a
+
+    # 3. Synonym group match
+    for grp in _ALIAS_GROUPS:
+        if canon in grp:
+            for a in assessments:
+                ac = _canon_key(a.assessment_name)
+                if ac in grp:
+                    return a
+            # Also match TEE alias group against assessment_type == 'TEE'
+            if 'TEE' in grp:
+                for a in assessments:
+                    if a.assessment_type == 'TEE':
+                        return a
+            # Match QUIZ alias against single Quiz type if unambiguous
+            if 'QUIZ' in grp:
+                quizzes = [a for a in assessments if a.assessment_type == 'Quiz']
+                if len(quizzes) == 1:
+                    return quizzes[0]
+            if 'ASSIGNMENT' in grp:
+                assigns = [a for a in assessments if a.assessment_type == 'Assignment']
+                if len(assigns) == 1:
+                    return assigns[0]
+    return None
+
+
+def _infer_assessment_type(name):
+    u = _canon_key(name)
+    if any(k in u for k in ('TEE', 'TERMEND', 'ENDSEM', 'FINAL', 'ESE')):
+        return 'TEE'
+    if 'QUIZ' in u:
+        return 'Quiz'
+    if 'ASSIGN' in u or 'ASSG' in u or 'HW' in u:
+        return 'Assignment'
+    if 'MID' in u:
+        return 'Mid-Term'
+    if 'LAB' in u or 'PRAC' in u:
+        return 'Lab'
+    if u in ('ICA', 'INTERNAL', 'INTERNALASSESSMENT'):
+        return 'ICA'
+    if 'TEST' in u or 'UNIT' in u or u.startswith('UT') or u.startswith('CT') or u.startswith('T1') or u.startswith('T2'):
+        return 'Test'
+    return 'Other'
+
+
+def _read_spreadsheet_table(file_storage, filename):
+    """Load uploaded .xlsx/.xls/.csv locating the Register Number header row automatically."""
+    if filename.endswith('.csv'):
+        raw_bytes = file_storage.read()
+        text = None
+        for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
+            try:
+                text = raw_bytes.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        if text is None:
+            raise ValueError("Unable to decode CSV file encoding.")
+        lines = text.splitlines()
+        header_idx = 0
+        for i, line in enumerate(lines[:25]):
+            cells = [c.strip().strip('"').strip("'") for c in line.split(',')]
+            if any(_is_reg_header(c) for c in cells):
+                header_idx = i
+                break
+        return pd.read_csv(io.StringIO(text), skiprows=header_idx, dtype=str)
+
+    # Excel (.xlsx / .xls)
+    file_storage.seek(0)
+    raw_df = pd.read_excel(file_storage, header=None, dtype=object)
+    header_idx = None
+    for r_idx in range(min(25, len(raw_df))):
+        row_vals = raw_df.iloc[r_idx].tolist()
+        if any(_is_reg_header(v) for v in row_vals):
+            header_idx = r_idx
+            break
+
+    if header_idx is None:
+        raise ValueError("Could not locate a 'Register Number' / 'Reg No' column header in the first 25 rows.")
+
+    headers = []
+    sub_row = raw_df.iloc[header_idx + 1].tolist() if (header_idx + 1) < len(raw_df) else None
+    has_max_subrow = sub_row is not None and any('MAX' in str(v or '').upper() for v in sub_row) and not any(
+        normalize_reg_no(v) for i, v in enumerate(sub_row) if _is_reg_header(raw_df.iloc[header_idx].iloc[i])
+    )
+
+    raw_headers = raw_df.iloc[header_idx].tolist()
+    for idx_c, h in enumerate(raw_headers):
+        h_str = '' if (h is None or (isinstance(h, float) and pd.isna(h))) else str(h).strip()
+        if not h_str:
+            h_str = f"Unnamed_{idx_c}"
+        elif has_max_subrow and sub_row[idx_c] is not None and not (isinstance(sub_row[idx_c], float) and pd.isna(sub_row[idx_c])):
+            sub_str = str(sub_row[idx_c]).strip()
+            if 'MAX' in sub_str.upper() and 'MAX' not in h_str.upper():
+                h_str = f"{h_str} ({sub_str})"
+        headers.append(h_str)
+
+    data_start = header_idx + (2 if has_max_subrow else 1)
+    df = raw_df.iloc[data_start:].copy().reset_index(drop=True)
+    df.columns = headers
+    return df
 
 def create_styled_header(ws, row, headers, fill_color="1F4E79", font_color="FFFFFF"):
     fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
@@ -137,92 +334,140 @@ def generate_assessment_template(mapping_id):
     return output
 
 
-def parse_marks_upload(file_storage, mapping_id):
+def _col_has_mark_values(series):
+    """Return True if column contains at least one valid mark entry (numeric, AB, EX)."""
+    for v in series:
+        if pd.isna(v):
+            continue
+        s = str(v).strip().upper()
+        if not s or s == '-':
+            continue
+        if s in ('AB', 'ABSENT', 'EX', 'EXEMPT', 'EXEMPTED'):
+            return True
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
+    return False
+
+
+def parse_marks_upload(file_storage, mapping_id, auto_create=False):
     """
     Parse uploaded Excel / CSV file for marks entry.
-    Validates students and max marks constraints.
-    Returns: {
-        'success': bool,
-        'records': list of dicts: {'student_id': id, 'reg_no': str, 'name': str, 'marks': {ass_id: {'score': float, 'status': str}}},
-        'errors': list of error strings,
-        'warnings': list of warning strings
-    }
+    Supports flexible column names (e.g. Test1, Test 1, Quiz, TEE), numeric register IDs,
+    and optional automatic creation of custom faculty ICA components.
     """
     mapping = FacultySubjectMapping.query.get_or_404(mapping_id)
     students = Student.query.filter_by(section_id=mapping.section_id).all()
-    student_by_reg = {s.register_number.strip().upper(): s for s in students}
+    student_by_reg = {}
+    for s in students:
+        r1 = normalize_reg_no(s.register_number)
+        if r1:
+            student_by_reg[r1] = s
+        r2 = normalize_reg_no(s.student_id_code)
+        if r2 and r2 not in student_by_reg:
+            student_by_reg[r2] = s
 
-    assessments = Assessment.query.filter_by(mapping_id=mapping.id, is_active=True).all()
-    ass_by_name = {a.assessment_name.strip().upper(): a for a in assessments}
+    all_assessments = Assessment.query.filter_by(mapping_id=mapping.id).order_by(Assessment.order_num.asc()).all()
+    active_assessments = [a for a in all_assessments if a.is_active]
+    all_by_name = {a.assessment_name.strip().upper(): a for a in all_assessments}
 
-    filename = file_storage.filename.lower()
+    filename = (file_storage.filename or '').lower()
     errors = []
     warnings = []
     records = []
+    auto_created_names = []
 
     try:
-        if filename.endswith('.csv'):
-            df = pd.read_csv(file_storage)
-        else:
-            # Excel might have metadata in top rows. Let's find header row
-            wb = openpyxl.load_workbook(file_storage, data_only=True)
-            ws = wb.active
-            
-            # Find row containing "Register Number"
-            header_row_idx = None
-            for r in range(1, 20):
-                row_vals = [str(ws.cell(row=r, column=c).value or '').strip().upper() for c in range(1, 25)]
-                if any('REGISTER NUMBER' in v or 'REG. NO' in v or 'REG NO' in v for v in row_vals):
-                    header_row_idx = r
-                    break
-            
-            if not header_row_idx:
-                return {'success': False, 'errors': ["Could not locate 'Register Number' column header in the sheet."]}
-            
-            # Read into dataframe starting from header row
-            file_storage.seek(0)
-            df = pd.read_excel(file_storage, skiprows=header_row_idx - 1)
+        df = _read_spreadsheet_table(file_storage, filename)
     except Exception as e:
         return {'success': False, 'errors': [f"Failed to read file: {str(e)}"]}
 
-    # Clean DataFrame columns
     df.columns = [str(c).strip() for c in df.columns]
 
-    # Find Register Number column
+    # Locate Register Number column
     reg_col = None
     for c in df.columns:
-        cup = c.upper()
-        if 'REGISTER NUMBER' in cup or 'REG. NO' in cup or 'REG NO' in cup or cup == 'REG_NO':
+        if _is_reg_header(c):
             reg_col = c
             break
 
     if not reg_col:
-        return {'success': False, 'errors': ["Column 'Register Number' is missing."]}
+        return {'success': False, 'errors': ["Column 'Register Number' (or 'Reg No') is missing in the uploaded sheet."]}
 
-    # Map remaining columns to assessments
+    # Map sheet columns to existing active assessments or auto-create custom ICA columns
     col_to_assessment = {}
+    matched_ass_ids = set()
+    next_order = (max((a.order_num for a in all_assessments), default=0) + 1)
+
     for c in df.columns:
-        if c == reg_col or 'NAME' in c.upper() or 'S.NO' in c.upper() or 'SERIAL' in c.upper():
+        if c == reg_col:
             continue
-        # Assessment header could be "Test 1\n(Max: 20)" or "Test 1"
-        clean_name = c.split('\n')[0].split('(')[0].strip().upper()
-        matched_ass = ass_by_name.get(clean_name)
-        if matched_ass:
+        cup = c.upper()
+        if cup.startswith('UNNAMED'):
+            continue
+        base_name, max_hint = _extract_header_meta(c)
+        canon_base = _canon_key(base_name)
+        if not canon_base or canon_base in _SKIP_UPLOAD_COLS or 'NAME' in cup or 'S.NO' in cup or 'SERIAL' in cup:
+            continue
+
+        matched_ass = _match_assessment(base_name, active_assessments)
+        if matched_ass and matched_ass.id not in matched_ass_ids:
             col_to_assessment[c] = matched_ass
+            matched_ass_ids.add(matched_ass.id)
+        elif not matched_ass and auto_create and _col_has_mark_values(df[c]):
+            # Determine reasonable max marks from header or observed scores
+            inferred_max = max_hint
+            if not inferred_max:
+                numeric_vals = []
+                for v in df[c]:
+                    try:
+                        if not pd.isna(v) and str(v).strip() not in ('', '-', 'AB', 'ABSENT', 'EX', 'EXEMPT', 'EXEMPTED'):
+                            numeric_vals.append(float(v))
+                    except ValueError:
+                        pass
+                top_val = max(numeric_vals) if numeric_vals else 20.0
+                inferred_max = float(max(20.0, math.ceil(top_val / 5.0) * 5.0))
+
+            existing_inactive = all_by_name.get(base_name.upper())
+            if existing_inactive:
+                existing_inactive.is_active = True
+                if max_hint:
+                    existing_inactive.max_marks = inferred_max
+                target_ass = existing_inactive
+            else:
+                target_ass = Assessment(
+                    mapping_id=mapping.id,
+                    assessment_name=base_name[:80],
+                    assessment_type=_infer_assessment_type(base_name),
+                    max_marks=inferred_max,
+                    order_num=next_order,
+                    is_active=True
+                )
+                db.session.add(target_ass)
+                db.session.flush()
+                all_by_name[base_name.upper()] = target_ass
+                next_order += 1
+
+            col_to_assessment[c] = target_ass
+            matched_ass_ids.add(target_ass.id)
+            active_assessments.append(target_ass)
+            auto_created_names.append(f"{target_ass.assessment_name} (Max: {target_ass.max_marks:g})")
 
     if not col_to_assessment:
+        expected = ', '.join(a.assessment_name for a in active_assessments) or 'Test 1, Test 2, Quiz, Assignment'
         return {
             'success': False,
-            'errors': [f"No matching assessment columns found in the sheet. Expected one of: {', '.join(ass_by_name.keys())}"]
+            'errors': [f"No matching assessment columns found in the sheet. Expected one of: {expected}"]
         }
 
     # Iterate rows and validate
     for idx, row in df.iterrows():
-        raw_reg = row.get(reg_col)
-        if pd.isna(raw_reg) or str(raw_reg).strip() == '':
+        reg_no = normalize_reg_no(row.get(reg_col))
+        if not reg_no:
             continue
-        
-        reg_no = str(raw_reg).strip().upper()
+
         student = student_by_reg.get(reg_no)
         if not student:
             errors.append(f"Row {idx + 2}: Register Number '{reg_no}' is not enrolled in this section.")
@@ -232,9 +477,8 @@ def parse_marks_upload(file_storage, mapping_id):
         for col, ass in col_to_assessment.items():
             val = row.get(col)
             if pd.isna(val) or str(val).strip() == '' or str(val).strip() == '-':
-                # Missing or blank marks
                 continue
-            
+
             sval = str(val).strip().upper()
             if sval in ['AB', 'ABSENT']:
                 stu_marks[ass.id] = {'score': None, 'status': 'Absent'}
@@ -242,7 +486,7 @@ def parse_marks_upload(file_storage, mapping_id):
                 stu_marks[ass.id] = {'score': None, 'status': 'Exempted'}
             else:
                 try:
-                    num_val = float(val)
+                    num_val = float(sval)
                     if num_val < 0:
                         errors.append(f"Row {idx + 2} ({reg_no}): {ass.assessment_name} score cannot be negative ({num_val}).")
                     elif num_val > ass.max_marks:
@@ -260,7 +504,11 @@ def parse_marks_upload(file_storage, mapping_id):
         })
 
     if errors:
+        db.session.rollback()
         return {'success': False, 'errors': errors, 'records': []}
+
+    if auto_created_names:
+        warnings.append(f"Added custom assessment column(s) from your spreadsheet: {', '.join(auto_created_names)}")
 
     return {
         'success': True,

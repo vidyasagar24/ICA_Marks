@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Configure ICA Distribution - {{ mapping.subject.subject_code }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+  <div>
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb mb-1 small">
+        <li class="breadcrumb-item"><a href="{{ url_for('faculty.my_allocations') }}">My Allocations</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('faculty.marks_entry', mapping_id=mapping.id) }}">Marks Entry</a></li>
+        <li class="breadcrumb-item active">ICA Distribution Setup</li>
+      </ol>
+    </nav>
+    <h4 class="fw-bold mb-1 text-dark">
+      <i class="fa-solid fa-sliders text-primary me-2"></i>Faculty ICA Distribution Setup
+    </h4>
+    <p class="text-muted small mb-0">
+      {{ mapping.subject.subject_code }} - {{ mapping.subject.subject_name }} &bull;
+      {{ mapping.programme.code }} Sem {{ mapping.semester.number }} Sec {{ mapping.section.name }} &bull;
+      Subject Limits: <b>ICA Max {{ mapping.subject.ica_max|int }}</b> | <b>TEE Max {{ mapping.subject.tee_max|int }}</b>
+    </p>
+  </div>
+  <a href="{{ url_for('faculty.marks_entry', mapping_id=mapping.id) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fa-solid fa-arrow-left me-1"></i> Back to Marks Grid
+  </a>
+</div>
+
+{% if is_locked %}
+  <div class="alert alert-warning mb-4">
+    <i class="fa-solid fa-lock me-2"></i> This course submission is currently <b>{{ submission.status }}</b>. ICA distribution changes are locked until reopened by the Administrator.
+  </div>
+{% endif %}
+
+<div class="card card-custom shadow-sm mb-4">
+  <div class="card-header-custom d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span class="fs-6 fw-semibold"><i class="fa-solid fa-wand-magic-sparkles text-primary me-2"></i> Quick Distribution Presets</span>
+    <span class="small text-muted">Target Subject ICA Max: <b id="targetIcaMax" data-max="{{ mapping.subject.ica_max }}">{{ mapping.subject.ica_max|int }}</b></span>
+  </div>
+  <div class="card-body py-3">
+    <div class="d-flex flex-wrap gap-2">
+      {% for p in presets %}
+        <button type="button"
+                class="btn btn-outline-primary btn-sm preset-btn"
+                data-items='{{ p["items"]|tojson }}'
+                {% if is_locked %}disabled{% endif %}>
+          <i class="fa-solid fa-layer-group me-1"></i> {{ p['label'] }}
+        </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<form method="POST" action="{{ url_for('faculty.ica_distribution', mapping_id=mapping.id) }}">
+  <div class="card card-custom shadow-sm">
+    <div class="card-header-custom d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <span class="fs-6"><i class="fa-solid fa-list-check text-success me-2"></i> Customize ICA Components (Test1, Test2, Quiz, Assignment, Lab, etc.)</span>
+      <div class="d-flex align-items-center gap-2">
+        <span id="icaSumBadge" class="badge bg-info-subtle text-info border fs-6 px-3 py-1">
+          Total ICA: <span id="icaSumVal">0</span> / {{ mapping.subject.ica_max|int }}
+        </span>
+        {% if not is_locked %}
+          <button type="button" class="btn btn-outline-success btn-sm" id="addComponentBtn">
+            <i class="fa-solid fa-plus me-1"></i> Add Component
+          </button>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" id="icaConfigTable">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 60px;" class="text-center">#</th>
+              <th>Component Name</th>
+              <th style="width: 190px;">Component Type</th>
+              <th style="width: 160px;">Maximum Marks</th>
+              <th style="width: 90px;" class="text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody id="icaRows">
+            {% for a in ica_components %}
+              <tr class="ica-row">
+                <td class="text-center text-muted row-order">{{ loop.index }}</td>
+                <td>
+                  <input type="hidden" name="component_id[]" value="{{ a.id }}">
+                  <input type="text" name="component_name[]" class="form-control form-control-sm fw-semibold" value="{{ a.assessment_name }}" placeholder="e.g. Test 1, Quiz, Assignment" required {% if is_locked %}disabled{% endif %}>
+                </td>
+                <td>
+                  <select name="component_type[]" class="form-select form-select-sm" {% if is_locked %}disabled{% endif %}>
+                    {% for t in ['Test', 'Quiz', 'Assignment', 'Mid-Term', 'Lab', 'Project', 'Seminar', 'Attendance', 'ICA', 'Other'] %}
+                      <option value="{{ t }}" {% if a.assessment_type == t %}selected{% endif %}>{{ t }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <input type="number" step="0.5" min="0.5" name="component_max[]" class="form-control form-control-sm comp-max-input" value="{{ a.max_marks|int if a.max_marks.is_integer() else a.max_marks }}" required {% if is_locked %}disabled{% endif %}>
+                </td>
+                <td class="text-center">
+                  {% if not is_locked %}
+                    <button type="button" class="btn btn-outline-danger btn-sm remove-row-btn" title="Remove component">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Term End Examination Toggle -->
+      <div class="p-3 border-top bg-light d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div class="form-check form-switch m-0">
+          <input class="form-check-input" type="checkbox" name="include_tee" id="includeTeeCheck" value="1" {% if tee_ass or not ica_components %}checked{% endif %} {% if is_locked %}disabled{% endif %}>
+          <label class="form-check-label fw-semibold" for="includeTeeCheck">
+            Include Term End Examination (TEE) Column
+          </label>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <label class="small text-muted fw-semibold mb-0" for="teeMaxInput">TEE Max Marks:</label>
+          <input type="number" step="0.5" min="1" name="tee_max" id="teeMaxInput" class="form-control form-control-sm" style="width: 100px;" value="{{ (tee_ass.max_marks if tee_ass else mapping.subject.tee_max)|int }}" {% if is_locked %}disabled{% endif %}>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center py-3 gap-2">
+      <div class="small text-muted" id="icaSumHint">
+        <i class="fa-solid fa-circle-info me-1 text-info"></i>
+        Tip: Existing entered marks are preserved whenever you keep or rename a component. If component totals differ from {{ mapping.subject.ica_max|int }}, consolidated ICA marks scale automatically to {{ mapping.subject.ica_max|int }}.
+      </div>
+      {% if not is_locked %}
+        <button type="submit" class="btn btn-primary-custom px-4">
+          <i class="fa-solid fa-check me-1"></i> Save ICA Distribution
+        </button>
+      {% endif %}
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const tbody = document.getElementById('icaRows');
+  const addBtn = document.getElementById('addComponentBtn');
+  const sumValEl = document.getElementById('icaSumVal');
+  const sumBadge = document.getElementById('icaSumBadge');
+  const targetMax = parseFloat(document.getElementById('targetIcaMax').dataset.max) || 50;
+  const types = ['Test', 'Quiz', 'Assignment', 'Mid-Term', 'Lab', 'Project', 'Seminar', 'Attendance', 'ICA', 'Other'];
+
+  function recalcTotal() {
+    let total = 0;
+    tbody.querySelectorAll('.comp-max-input').forEach(inp => {
+      const v = parseFloat(inp.value);
+      if (!isNaN(v)) total += v;
+    });
+    sumValEl.textContent = Number.isInteger(total) ? total : total.toFixed(1);
+    if (Math.abs(total - targetMax) < 0.01) {
+      sumBadge.className = 'badge bg-success-subtle text-success border border-success-subtle fs-6 px-3 py-1';
+    } else {
+      sumBadge.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fs-6 px-3 py-1';
+    }
+    tbody.querySelectorAll('.row-order').forEach((cell, idx) => {
+      cell.textContent = idx + 1;
+    });
+  }
+
+  function makeRow(name, type, maxVal) {
+    const tr = document.createElement('tr');
+    tr.className = 'ica-row';
+    const opts = types.map(t => `<option value="${t}" ${t === type ? 'selected' : ''}>${t}</option>`).join('');
+    tr.innerHTML = `
+      <td class="text-center text-muted row-order"></td>
+      <td>
+        <input type="hidden" name="component_id[]" value="">
+        <input type="text" name="component_name[]" class="form-control form-control-sm fw-semibold" value="${name}" placeholder="e.g. Test 1, Quiz, Assignment" required>
+      </td>
+      <td><select name="component_type[]" class="form-select form-select-sm">${opts}</select></td>
+      <td><input type="number" step="0.5" min="0.5" name="component_max[]" class="form-control form-control-sm comp-max-input" value="${maxVal}" required></td>
+      <td class="text-center">
+        <button type="button" class="btn btn-outline-danger btn-sm remove-row-btn" title="Remove component">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </td>
+    `;
+    return tr;
+  }
+
+  tbody.addEventListener('input', function (e) {
+    if (e.target.classList.contains('comp-max-input')) recalcTotal();
+  });
+
+  tbody.addEventListener('click', function (e) {
+    const btn = e.target.closest('.remove-row-btn');
+    if (!btn) return;
+    if (tbody.querySelectorAll('.ica-row').length <= 1) {
+      alert('At least one ICA component is required.');
+      return;
+    }
+    btn.closest('tr').remove();
+    recalcTotal();
+  });
+
+  if (addBtn) {
+    addBtn.addEventListener('click', function () {
+      const count = tbody.querySelectorAll('.ica-row').length + 1;
+      tbody.appendChild(makeRow(`Component ${count}`, 'Other', 10));
+      recalcTotal();
+    });
+  }
+
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const items = JSON.parse(this.dataset.items || '[]');
+      tbody.innerHTML = '';
+      items.forEach(item => tbody.appendChild(makeRow(item.name, item.type, item.max_marks)));
+      recalcTotal();
+    });
+  });
+
+  recalcTotal();
+});
+</script>
+{% endblock %}

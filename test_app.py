@@ -356,5 +356,105 @@ class AcademicAssessmentSystemTestCase(unittest.TestCase):
             exp.close()
         self.logout()
 
+    def test_16_flexible_excel_csv_marks_upload_and_numeric_regno(self):
+        mapping = FacultySubjectMapping.query.filter_by(status='Active').first()
+        # Ensure mapping is unlocked
+        for s in Submission.query.filter_by(mapping_id=mapping.id).all():
+            s.status = 'Draft'
+        # Add numeric-ID student like 70022400622
+        num_stu = Student(
+            register_number='70022400622',
+            student_id_code='70022400622',
+            student_name='Numeric Reg Student',
+            programme_id=mapping.programme_id,
+            academic_year_id=mapping.academic_year_id,
+            current_semester_id=mapping.semester_id,
+            section_id=mapping.section_id,
+            status='Active'
+        )
+        db.session.add(num_stu)
+        db.session.commit()
+
+        # Upload CSV using compact/aliased names ("Test1", "Quiz", "TEE", "Mini Project (10)") and float-like reg ID
+        csv_data = (
+            "S.No,Reg No,Student Name,Test1,Quiz,Mini Project (10),TEE\n"
+            "1,70022400622.0,Numeric Reg Student,18,8,9,88\n"
+        )
+        file_obj = io.BytesIO(csv_data.encode('utf-8'))
+        file_obj.filename = "marks_custom.csv"
+
+        result = parse_marks_upload(file_obj, mapping.id, auto_create=True)
+        self.assertTrue(result['success'], f"Expected upload success, got errors: {result.get('errors')}")
+        self.assertEqual(len(result['records']), 1)
+        self.assertGreaterEqual(len(result['records'][0]['marks']), 4)
+
+        mini_ass = Assessment.query.filter_by(mapping_id=mapping.id, assessment_name='Mini Project').first()
+        self.assertIsNotNone(mini_ass)
+        self.assertEqual(mini_ass.max_marks, 10.0)
+        db.session.rollback()
+
+    def test_17_faculty_custom_ica_distribution(self):
+        # Faculty A logs in and configures custom ICA split for their mapping
+        self.login('faculty_a', 'Faculty@123')
+        fac_a = Faculty.query.filter_by(faculty_id_code='FAC001').first()
+        # Use DS201 mapping (unlocked Draft)
+        mapping = FacultySubjectMapping.query.filter_by(faculty_id=fac_a.id, status='Active').order_by(FacultySubjectMapping.id.desc()).first()
+        for s in Submission.query.filter_by(mapping_id=mapping.id).all():
+            s.status = 'Draft'
+        db.session.commit()
+
+        # GET config page
+        res_get = self.client.get(f'/faculty/allocations/{mapping.id}/ica-distribution')
+        self.assertEqual(res_get.status_code, 200)
+        self.assertIn(b'Faculty ICA Distribution Setup', res_get.data)
+
+        # POST custom distribution totaling 50 (Test1: 15, Test2: 15, Quiz: 10, Assignment: 10)
+        res_post = self.client.post(f'/faculty/allocations/{mapping.id}/ica-distribution', data={
+            'component_id[]': ['', '', '', ''],
+            'component_name[]': ['Test1', 'Test2', 'Quiz', 'Assignment'],
+            'component_type[]': ['Test', 'Test', 'Quiz', 'Assignment'],
+            'component_max[]': ['15', '15', '10', '10'],
+            'include_tee': '1',
+            'tee_max': '100'
+        }, follow_redirects=True)
+        self.assertEqual(res_post.status_code, 200)
+        self.assertIn(b'ICA distribution updated successfully', res_post.data)
+
+        active_asses = Assessment.query.filter_by(mapping_id=mapping.id, is_active=True).order_by(Assessment.order_num.asc()).all()
+        names = [a.assessment_name for a in active_asses]
+        self.assertEqual(names, ['Test1', 'Test2', 'Quiz', 'Assignment', 'Term End Examination'])
+        self.logout()
+
+    def test_18_xlsx_template_roundtrip_http_upload(self):
+        # Faculty logs in, downloads official .xlsx template, fills scores, and uploads via POST
+        self.login('faculty_a', 'Faculty@123')
+        fac_a = Faculty.query.filter_by(faculty_id_code='FAC001').first()
+        mapping = FacultySubjectMapping.query.filter_by(faculty_id=fac_a.id, status='Active').order_by(FacultySubjectMapping.id.desc()).first()
+        for s in Submission.query.filter_by(mapping_id=mapping.id).all():
+            s.status = 'Draft'
+        db.session.commit()
+
+        res_tpl = self.client.get(f'/faculty/allocations/{mapping.id}/template')
+        self.assertEqual(res_tpl.status_code, 200)
+
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(res_tpl.data))
+        ws = wb.active
+        # Row 9 is first student in generated template; fill first assessment cell
+        ws.cell(row=9, column=4, value=14)
+        out = io.BytesIO()
+        wb.save(out)
+        out.seek(0)
+
+        res_up = self.client.post(
+            f'/faculty/allocations/{mapping.id}/upload',
+            data={'file': (out, 'Marks_Template.xlsx'), 'auto_create_components': '1'},
+            content_type='multipart/form-data',
+            follow_redirects=True
+        )
+        self.assertEqual(res_up.status_code, 200)
+        self.assertIn(b'Successfully imported', res_up.data)
+        self.logout()
+
 if __name__ == '__main__':
     unittest.main()

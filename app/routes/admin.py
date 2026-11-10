@@ -431,24 +431,9 @@ def mappings():
             db.session.add(mapping)
             db.session.flush()
 
-            # Automatically populate standard assessment components per PRD FR-09
-            default_assessments = [
-                ('Test 1', 'Test', 20.0, 1),
-                ('Test 2', 'Test', 20.0, 2),
-                ('Assignment', 'Assignment', 10.0, 3),
-                ('Quiz 1', 'Quiz', 10.0, 4),
-                ('ICA', 'ICA', 50.0, 5),
-                ('Term End Examination', 'TEE', 100.0, 6),
-            ]
-            for a_name, a_type, a_max, a_ord in default_assessments:
-                ass = Assessment(
-                    mapping_id=mapping.id,
-                    assessment_name=a_name,
-                    assessment_type=a_type,
-                    max_marks=a_max,
-                    order_num=a_ord
-                )
-                db.session.add(ass)
+            # Populate balanced ICA distribution + TEE matching subject limits
+            from app.services.assessment_service import seed_default_assessments_for_mapping
+            seed_default_assessments_for_mapping(mapping)
 
             db.session.commit()
             log_action('CREATE_MAPPING', 'FacultySubjectMapping', entity_id=mapping.id, updated_value={'mapping': mapping.display_title})
@@ -621,9 +606,9 @@ def students():
             try:
                 import pandas as pd
                 if file.filename.lower().endswith('.csv'):
-                    df = pd.read_csv(file)
+                    df = pd.read_csv(file, dtype=str)
                 else:
-                    df = pd.read_excel(file)
+                    df = pd.read_excel(file, dtype=str)
 
                 # Find register number and name columns
                 reg_col = None

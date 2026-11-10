@@ -28,7 +28,10 @@
       <span class="badge bg-secondary fs-6 py-2 px-3">Status: Draft</span>
     {% endif %}
 
-    <!-- Excel actions -->
+    <!-- Course Actions & ICA Setup -->
+    <a href="{{ url_for('faculty.ica_distribution', mapping_id=mapping.id) }}" class="btn btn-outline-primary btn-sm" title="Customize ICA components (Test1, Test2, Quiz, Assignment, etc.)">
+      <i class="fa-solid fa-sliders me-1"></i> Configure ICA
+    </a>
     <a href="{{ url_for('faculty.download_template', mapping_id=mapping.id) }}" class="btn btn-outline-secondary btn-sm" title="Download Excel template prefilled with students">
       <i class="fa-solid fa-download me-1"></i> Template
     </a>
@@ -74,7 +77,11 @@
     </div>
     
     <div class="table-responsive">
-      <table class="table table-custom table-hover marks-grid" id="marksEntryTable" data-mapping-id="{{ mapping.id }}" data-is-locked="{{ 'true' if is_locked else 'false' }}">
+      <table class="table table-custom table-hover marks-grid" id="marksEntryTable"
+             data-mapping-id="{{ mapping.id }}"
+             data-is-locked="{{ 'true' if is_locked else 'false' }}"
+             data-ica-max="{{ mapping.subject.ica_max }}"
+             data-has-explicit-ica="{{ 'true' if has_explicit_ica else 'false' }}">
         <thead>
           <tr>
             <th style="width: 45px;">#</th>
@@ -86,6 +93,12 @@
                 <small class="badge bg-secondary-subtle text-secondary" style="font-size: 0.7rem;">Max: {{ ass.max_marks|int if ass.max_marks.is_integer() else ass.max_marks }}</small>
               </th>
             {% endfor %}
+            {% if not has_explicit_ica %}
+              <th class="bg-light-subtle text-primary" style="width: 90px;">
+                <div class="fw-bold">ICA</div>
+                <small class="badge bg-primary-subtle text-primary" style="font-size: 0.7rem;">Auto: {{ mapping.subject.ica_max|int }}</small>
+              </th>
+            {% endif %}
             <th style="width: 90px;">Total</th>
             <th style="width: 80px;">%</th>
           </tr>
@@ -114,6 +127,7 @@
                          class="marks-input {% if current_val %}is-saved-mark{% endif %}"
                          value="{{ current_val }}"
                          data-max-marks="{{ ass.max_marks }}"
+                         data-ass-type="{{ ass.assessment_type }}"
                          data-student-id="{{ stu.id }}"
                          data-assessment-id="{{ ass.id }}"
                          autocomplete="off"
@@ -121,6 +135,11 @@
                          {% if is_locked %}disabled{% endif %}>
                 </td>
               {% endfor %}
+              {% if not has_explicit_ica %}
+                <td class="bg-light-subtle">
+                  <span class="row-ica-score fw-bold text-primary">-</span>
+                </td>
+              {% endif %}
               <td>
                 <span class="row-total-score fw-bold text-dark">-</span>
               </td>
@@ -130,7 +149,7 @@
             </tr>
           {% else %}
             <tr>
-              <td colspan="{{ assessments|length + 5 }}" class="text-center py-4 text-muted">
+              <td colspan="{{ assessments|length + (5 if has_explicit_ica else 6) }}" class="text-center py-4 text-muted">
                 No active students enrolled in this section.
               </td>
             </tr>

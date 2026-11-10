@@ -371,9 +371,9 @@ def api_import_students():
     try:
         import pandas as pd
         if file.filename.lower().endswith('.csv'):
-            df = pd.read_csv(file)
+            df = pd.read_csv(file, dtype=str)
         else:
-            df = pd.read_excel(file)
+            df = pd.read_excel(file, dtype=str)
 
         reg_col, name_col, email_col = None, None, None
         for c in df.columns:
@@ -510,10 +510,9 @@ def api_mappings():
         db.session.add(mapping)
         db.session.flush()
 
-        # Seed default assessment components (Test 1, Test 2, Assignment, Quiz 1, ICA, TEE)
-        defaults = [('Test 1', 20.0, 1), ('Test 2', 20.0, 2), ('Assignment', 10.0, 3), ('Quiz 1', 10.0, 4), ('ICA', 50.0, 5), ('Term End Examination', 100.0, 6)]
-        for aname, amax, aord in defaults:
-            db.session.add(Assessment(mapping_id=mapping.id, assessment_name=aname, max_marks=amax, order_num=aord))
+        # Seed balanced ICA distribution + TEE matching subject limits
+        from app.services.assessment_service import seed_default_assessments_for_mapping
+        seed_default_assessments_for_mapping(mapping)
 
         db.session.commit()
         return api_response(True, "Allocation created", data={"mapping_id": mapping.id, "display_title": mapping.display_title})

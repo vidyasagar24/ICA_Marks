@@ -186,12 +186,87 @@ def marks_entry(mapping_id):
         flash(f'Marks saved as Draft successfully ({updated_count} records saved/updated).', 'success')
         return redirect(url_for('faculty.marks_entry', mapping_id=mapping.id))
 
+    from app.services.assessment_service import split_ica_assessments
+    _, explicit_ica_ass, tee_ass = split_ica_assessments(assessments)
+
     return render_template(
         'faculty/marks_entry.html',
         mapping=mapping,
         students=students,
         assessments=assessments,
         marks_map=marks_map,
+        is_locked=is_locked,
+        submission=sub,
+        has_explicit_ica=(explicit_ica_ass is not None),
+        tee_ass=tee_ass
+    )
+
+
+# ----------------- FACULTY ICA DISTRIBUTION CONFIG -----------------
+@faculty_bp.route('/allocations/<int:mapping_id>/ica-distribution', methods=['GET', 'POST'])
+@login_required
+@faculty_required
+def ica_distribution(mapping_id):
+    from app.services.assessment_service import (
+        get_ica_presets, save_faculty_ica_distribution, split_ica_assessments
+    )
+    mapping = check_faculty_allocation(mapping_id)
+    sub = Submission.query.filter_by(mapping_id=mapping.id).order_by(Submission.id.desc()).first()
+    is_locked = sub is not None and sub.status in ['Submitted', 'Under Review', 'Approved']
+
+    assessments = Assessment.query.filter_by(mapping_id=mapping.id, is_active=True).order_by(Assessment.order_num.asc()).all()
+    internals, explicit_ica, tee_ass = split_ica_assessments(assessments)
+    ica_components = internals + ([explicit_ica] if explicit_ica else [])
+    presets = get_ica_presets(mapping.subject.ica_max)
+
+    if request.method == 'POST':
+        if is_locked:
+            flash('ICA configuration cannot be changed while submission is locked/approved.', 'danger')
+            return redirect(url_for('faculty.ica_distribution', mapping_id=mapping.id))
+
+        comp_ids = request.form.getlist('component_id[]')
+        comp_names = request.form.getlist('component_name[]')
+        comp_types = request.form.getlist('component_type[]')
+        comp_maxes = request.form.getlist('component_max[]')
+        include_tee = bool(request.form.get('include_tee'))
+        tee_max = request.form.get('tee_max', type=float)
+
+        components = []
+        for idx, name in enumerate(comp_names):
+            clean_name = name.strip()
+            if not clean_name:
+                continue
+            cid = comp_ids[idx].strip() if idx < len(comp_ids) and comp_ids[idx].strip() else None
+            ctype = comp_types[idx].strip() if idx < len(comp_types) else 'Test'
+            try:
+                cmax = float(comp_maxes[idx]) if idx < len(comp_maxes) else 0.0
+            except (ValueError, TypeError):
+                cmax = 0.0
+            components.append({'id': cid, 'name': clean_name, 'type': ctype, 'max_marks': cmax})
+
+        if not components:
+            flash('Please configure at least one ICA assessment component.', 'danger')
+            return redirect(url_for('faculty.ica_distribution', mapping_id=mapping.id))
+
+        try:
+            save_faculty_ica_distribution(mapping, components, include_tee=include_tee, tee_max=tee_max)
+            log_action('CONFIGURE_ICA_DISTRIBUTION', 'FacultySubjectMapping', entity_id=mapping.id, updated_value={
+                'components': [f"{c['name']} ({c['max_marks']})" for c in components],
+                'include_tee': include_tee
+            })
+            flash(f"ICA distribution updated successfully ({len(components)} components configured).", 'success')
+            return redirect(url_for('faculty.marks_entry', mapping_id=mapping.id))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Could not save ICA distribution: {str(e)}", 'danger')
+            return redirect(url_for('faculty.ica_distribution', mapping_id=mapping.id))
+
+    return render_template(
+        'faculty/ica_distribution.html',
+        mapping=mapping,
+        ica_components=ica_components,
+        tee_ass=tee_ass,
+        presets=presets,
         is_locked=is_locked,
         submission=sub
     )
@@ -221,6 +296,7 @@ def upload_marks(mapping_id):
     # Check lock
     sub = Submission.query.filter_by(mapping_id=mapping.id).order_by(Submission.id.desc()).first()
     is_locked = sub is not None and sub.status in ['Submitted', 'Under Review', 'Approved']
+    assessments = Assessment.query.filter_by(mapping_id=mapping.id, is_active=True).order_by(Assessment.order_num.asc()).all()
 
     if request.method == 'POST':
         if is_locked:
@@ -232,55 +308,71 @@ def upload_marks(mapping_id):
             flash('Please choose an Excel or CSV file to upload.', 'danger')
             return redirect(url_for('faculty.upload_marks', mapping_id=mapping.id))
 
+        auto_create = bool(request.form.get('auto_create_components'))
         from app.services.excel_service import parse_marks_upload
-        result = parse_marks_upload(file, mapping.id)
+        result = parse_marks_upload(file, mapping.id, auto_create=auto_create)
 
         if not result['success']:
-            for err in result['errors']:
+            for err in result['errors'][:10]:
                 flash(err, 'danger')
-            return render_template('faculty/excel_upload.html', mapping=mapping, is_locked=is_locked, submission=sub)
+            return render_template(
+                'faculty/excel_upload.html', mapping=mapping, assessments=assessments, is_locked=is_locked, submission=sub
+            )
 
         # Save records as Draft
-        saved_count = 0
-        for rec in result['records']:
-            stu_id = rec['student_id']
-            for ass_id, m_data in rec['marks'].items():
-                mark = Mark.query.filter_by(student_id=stu_id, assessment_id=ass_id, mapping_id=mapping.id).first()
-                old_score = mark.score if mark else None
-                if mark:
-                    mark.score = m_data['score']
-                    mark.status = m_data['status']
-                    mark.updated_at = datetime.utcnow()
-                    target_mark = mark
-                else:
-                    mark = Mark(
-                        student_id=stu_id,
-                        assessment_id=ass_id,
-                        mapping_id=mapping.id,
-                        score=m_data['score'],
-                        status=m_data['status']
-                    )
-                    db.session.add(mark)
-                    db.session.flush()
-                    target_mark = mark
+        try:
+            saved_count = 0
+            for rec in result['records']:
+                stu_id = rec['student_id']
+                for ass_id, m_data in rec['marks'].items():
+                    mark = Mark.query.filter_by(student_id=stu_id, assessment_id=ass_id, mapping_id=mapping.id).first()
+                    old_score = mark.score if mark else None
+                    if mark:
+                        mark.score = m_data['score']
+                        mark.status = m_data['status']
+                        mark.updated_at = datetime.utcnow()
+                        target_mark = mark
+                    else:
+                        mark = Mark(
+                            student_id=stu_id,
+                            assessment_id=ass_id,
+                            mapping_id=mapping.id,
+                            score=m_data['score'],
+                            status=m_data['status']
+                        )
+                        db.session.add(mark)
+                        db.session.flush()
+                        target_mark = mark
 
-                if old_score != m_data['score']:
-                    audit_entry = MarksAudit(
-                        mark_id=target_mark.id,
-                        old_marks=old_score,
-                        new_marks=m_data['score'],
-                        changed_by=current_user.id,
-                        reason="Bulk Excel import"
-                    )
-                    db.session.add(audit_entry)
-                saved_count += 1
+                    if old_score != m_data['score']:
+                        audit_entry = MarksAudit(
+                            mark_id=target_mark.id,
+                            old_marks=old_score,
+                            new_marks=m_data['score'],
+                            changed_by=current_user.id,
+                            reason="Bulk Excel import"
+                        )
+                        db.session.add(audit_entry)
+                    saved_count += 1
 
-        db.session.commit()
-        log_action('EXCEL_UPLOAD_MARKS', 'FacultySubjectMapping', entity_id=mapping.id, updated_value={'records_updated': saved_count})
-        flash(f"Successfully processed spreadsheet! {saved_count} mark entries saved as draft.", 'success')
-        return redirect(url_for('faculty.marks_entry', mapping_id=mapping.id))
+            db.session.commit()
+            for warn in result.get('warnings', []):
+                flash(warn, 'info')
+            log_action('EXCEL_UPLOAD_MARKS', 'FacultySubjectMapping', entity_id=mapping.id, updated_value={'records_updated': saved_count})
+            if saved_count > 0:
+                cols_str = ', '.join(result.get('assessments_updated', []))
+                flash(f"Successfully imported {saved_count} mark entries ({cols_str}) into Draft.", 'success')
+            else:
+                flash("Spreadsheet matched, but all score cells were blank (0 marks updated).", 'warning')
+            return redirect(url_for('faculty.marks_entry', mapping_id=mapping.id))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Database error saving imported marks: {str(e)}", 'danger')
+            return redirect(url_for('faculty.upload_marks', mapping_id=mapping.id))
 
-    return render_template('faculty/excel_upload.html', mapping=mapping, is_locked=is_locked, submission=sub)
+    return render_template(
+        'faculty/excel_upload.html', mapping=mapping, assessments=assessments, is_locked=is_locked, submission=sub
+    )
 
 # ----------------- EXPORT MARKS -----------------
 @faculty_bp.route('/allocations/<int:mapping_id>/export/<format>')

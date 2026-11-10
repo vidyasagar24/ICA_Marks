@@ -337,18 +337,16 @@ def get_section_consolidated_sheet(section_id):
     marks_map = {(m.mapping_id, m.student_id, m.assessment_id): m for m in all_marks}
 
     # Determine which assessments have been conducted (have at least one entered mark)
+    from app.services.assessment_service import split_ica_assessments
     conducted_assessments = {}
     for m in mappings:
         ass_list = ass_by_mapping.get(m.id, [])
-        ica_ass = next((a for a in ass_list if a.assessment_type == 'ICA' or 'ICA' in a.assessment_name.upper()), None)
-        tee_ass = next((a for a in ass_list if a.assessment_type == 'TEE' or 'TEE' in a.assessment_name.upper() or 'TERM END' in a.assessment_name.upper()), None)
+        internals, ica_ass, tee_ass = split_ica_assessments(ass_list)
         
         ica_held = False
         if ica_ass:
             ica_held = any(marks_map.get((m.id, s.id, ica_ass.id)) is not None for s in students)
         if not ica_held:
-            # check internal assessments
-            internals = [a for a in ass_list if a != tee_ass and a != ica_ass]
             ica_held = any(marks_map.get((m.id, s.id, a.id)) is not None for a in internals for s in students)
 
         tee_held = False
@@ -359,7 +357,8 @@ def get_section_consolidated_sheet(section_id):
             'ica_held': ica_held,
             'tee_held': tee_held,
             'ica_ass': ica_ass,
-            'tee_ass': tee_ass
+            'tee_ass': tee_ass,
+            'internals': internals,
         }
 
     students_data = []
@@ -377,8 +376,12 @@ def get_section_consolidated_sheet(section_id):
             cond_info = conducted_assessments[m.id]
             ica_ass = cond_info['ica_ass']
             tee_ass = cond_info['tee_ass']
+            internals = cond_info['internals']
             ica_held = cond_info['ica_held']
             tee_held = cond_info['tee_held']
+
+            subj_ica_max = (ica_ass.max_marks if ica_ass else m.subject.ica_max) or 50.0
+            subj_tee_max = (tee_ass.max_marks if tee_ass else m.subject.tee_max) or 100.0
 
             # 1. ICA Score calculation
             ica_disp = '-'
@@ -395,17 +398,33 @@ def get_section_consolidated_sheet(section_id):
                         ica_disp = f"{mk.score:g}"
                         ica_val = mk.score
             
-            # If explicit ICA assessment is not scored, fallback to sum of internal tests
-            if ica_val is None:
-                internals = [a for a in ass_list if a != tee_ass and a != ica_ass]
+            # Aggregate faculty-configured internal components when standalone ICA isn't explicitly scored
+            if ica_val is None and internals:
                 internal_scores = []
+                any_absent = False
+                any_exempt = False
                 for a in internals:
                     mk = marks_map.get((m.id, stu.id, a.id))
-                    if mk and mk.score is not None:
+                    if not mk:
+                        continue
+                    if mk.status == 'Absent':
+                        any_absent = True
+                        internal_scores.append(0.0)
+                    elif mk.status == 'Exempted':
+                        any_exempt = True
+                    elif mk.score is not None:
                         internal_scores.append(mk.score)
+
                 if internal_scores:
-                    ica_val = sum(internal_scores)
-                    ica_disp = f"{ica_val:g}"
+                    raw_sum = sum(internal_scores)
+                    internals_max = sum(a.max_marks for a in internals)
+                    if internals_max > 0 and abs(internals_max - subj_ica_max) > 0.01:
+                        ica_val = round((raw_sum / internals_max) * subj_ica_max, 1)
+                    else:
+                        ica_val = round(raw_sum, 1)
+                    ica_disp = 'AB' if (ica_val == 0.0 and any_absent and all(s == 0.0 for s in internal_scores)) else f"{ica_val:g}"
+                elif any_exempt:
+                    ica_disp = 'EX'
 
             # 2. TEE Score calculation
             tee_disp = '-'
@@ -423,8 +442,6 @@ def get_section_consolidated_sheet(section_id):
                         tee_val = mk.score
 
             # 3. Subject Total & Percentage calculation based on conducted evaluations
-            subj_ica_max = (ica_ass.max_marks if ica_ass else m.subject.ica_max) or 50.0
-            subj_tee_max = (tee_ass.max_marks if tee_ass else m.subject.tee_max) or 100.0
             
             # Determine effective max marks for conducted portions
             subj_effective_max = 0.0
