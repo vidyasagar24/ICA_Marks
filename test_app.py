@@ -531,5 +531,52 @@ class AcademicAssessmentSystemTestCase(unittest.TestCase):
         self.assertIn(b'Total <span class="d-block text-secondary fw-normal" style="font-size: 0.68rem;">(50)</span>', res_cons.data)
         self.logout()
 
+    def test_20_faculty_ica_components_cannot_cross_admin_ica_max(self):
+        from app.services.assessment_service import save_faculty_ica_distribution
+        self.login('faculty_a', 'Faculty@123')
+        fac_a = Faculty.query.filter_by(faculty_id_code='FAC001').first()
+        mapping = FacultySubjectMapping.query.filter_by(faculty_id=fac_a.id, status='Active').first()
+        for s in Submission.query.filter_by(mapping_id=mapping.id).all():
+            s.status = 'Draft'
+        db.session.commit()
+
+        # Subject ICA max is 50.0
+        subj_ica_max = mapping.subject.ica_max
+        self.assertEqual(subj_ica_max, 50.0)
+
+        # 1. Attempt POST with 6 components of 10 marks each (sum = 60 > 50, exactly as in user screenshot)
+        res_post_exceed = self.client.post(f'/faculty/allocations/{mapping.id}/ica-distribution', data={
+            'component_id[]': ['', '', '', '', '', ''],
+            'component_name[]': ['Test 1', 'Test 2', 'Quiz 1', 'Assignment', 'Presentation', 'Component 6'],
+            'component_type[]': ['Test', 'Test', 'Quiz', 'Assignment', 'Presentation', 'Other'],
+            'component_max[]': ['10', '10', '10', '10', '10', '10'],
+            'include_tee': '1',
+            'tee_max': '100'
+        }, follow_redirects=True)
+        self.assertEqual(res_post_exceed.status_code, 200)
+        self.assertIn(b'cannot cross the maximum ICA limit of 50', res_post_exceed.data)
+
+        # 2. Verify backend service raises ValueError when total exceeds subject.ica_max
+        with self.assertRaises(ValueError) as ctx:
+            save_faculty_ica_distribution(mapping, [
+                {'name': 'Test 1', 'type': 'Test', 'max_marks': 30},
+                {'name': 'Test 2', 'type': 'Test', 'max_marks': 30},
+            ])
+        self.assertIn('cannot cross the maximum ICA limit of 50', str(ctx.exception))
+
+        # 3. Verify POST succeeds when components sum <= 50 (e.g. 10 + 10 + 10 + 10 + 10 = 50)
+        res_post_valid = self.client.post(f'/faculty/allocations/{mapping.id}/ica-distribution', data={
+            'component_id[]': ['', '', '', '', ''],
+            'component_name[]': ['Test 1', 'Test 2', 'Quiz 1', 'Assignment', 'Presentation'],
+            'component_type[]': ['Test', 'Test', 'Quiz', 'Assignment', 'Presentation'],
+            'component_max[]': ['10', '10', '10', '10', '10'],
+            'include_tee': '1',
+            'tee_max': '100'
+        }, follow_redirects=True)
+        self.assertEqual(res_post_valid.status_code, 200)
+        self.assertIn(b'ICA distribution updated successfully', res_post_valid.data)
+
+        self.logout()
+
 if __name__ == '__main__':
     unittest.main()

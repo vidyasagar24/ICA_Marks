@@ -156,7 +156,15 @@ def save_faculty_ica_distribution(mapping, components, include_tee=True, tee_max
     """
     Persist faculty-chosen ICA distribution components for a mapping while preserving
     any existing marks for kept/renamed assessments or deactivating unused ones safely.
+    Enforces that total ICA components marks cannot cross the subject ICA MAX fixed by admin.
     """
+    subj_ica_max = float(mapping.subject.ica_max if mapping.subject else 50.0) or 50.0
+    total_comp_max = sum(float(comp.get('max_marks') or 0) for comp in components if (comp.get('name') or '').strip())
+    if total_comp_max > subj_ica_max + 0.001:
+        raise ValueError(
+            f"Total ICA components marks ({total_comp_max:g}) cannot cross the maximum ICA limit of {subj_ica_max:g} fixed by the Administrator."
+        )
+
     existing_all = Assessment.query.filter_by(mapping_id=mapping.id).all()
     by_id = {a.id: a for a in existing_all}
     by_name = {a.assessment_name.strip().upper(): a for a in existing_all}

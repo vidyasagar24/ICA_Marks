@@ -248,6 +248,15 @@ def ica_distribution(mapping_id):
             flash('Please configure at least one ICA assessment component.', 'danger')
             return redirect(url_for('faculty.ica_distribution', mapping_id=mapping.id))
 
+        subj_ica_max = float(mapping.subject.ica_max if mapping.subject else 50.0) or 50.0
+        total_comp_max = sum(c['max_marks'] for c in components)
+        if total_comp_max > subj_ica_max + 0.001:
+            flash(
+                f"Total ICA components marks ({total_comp_max:g}) cannot cross the maximum ICA limit of {subj_ica_max:g} fixed by the Administrator.",
+                "danger"
+            )
+            return redirect(url_for('faculty.ica_distribution', mapping_id=mapping.id))
+
         try:
             save_faculty_ica_distribution(mapping, components, include_tee=include_tee, tee_max=tee_max)
             log_action('CONFIGURE_ICA_DISTRIBUTION', 'FacultySubjectMapping', entity_id=mapping.id, updated_value={

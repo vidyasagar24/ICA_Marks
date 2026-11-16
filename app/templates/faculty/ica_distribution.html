@@ -50,7 +50,7 @@
   </div>
 </div>
 
-<form method="POST" action="{{ url_for('faculty.ica_distribution', mapping_id=mapping.id) }}">
+<form method="POST" action="{{ url_for('faculty.ica_distribution', mapping_id=mapping.id) }}" id="icaConfigForm">
   <div class="card card-custom shadow-sm">
     <div class="card-header-custom d-flex flex-wrap justify-content-between align-items-center gap-2">
       <span class="fs-6"><i class="fa-solid fa-list-check text-success me-2"></i> Customize ICA Components (Test1, Test2, Quiz, Assignment, Lab, etc.)</span>
@@ -63,6 +63,16 @@
             <i class="fa-solid fa-plus me-1"></i> Add Component
           </button>
         {% endif %}
+      </div>
+    </div>
+
+    <!-- Exceed Alert Banner -->
+    <div id="icaExceedAlert" class="alert alert-danger mx-3 my-2 py-2 px-3 small d-none" role="alert">
+      <div class="d-flex align-items-center">
+        <i class="fa-solid fa-triangle-exclamation fs-5 me-2"></i>
+        <div>
+          <strong>Cannot Exceed ICA Max:</strong> Total ICA components marks (<b id="exceedTotalVal">0</b>) cannot cross the <strong>ICA MAX of {{ mapping.subject.ica_max|int }}</strong> fixed by Administrator. Please reduce component marks to save.
+        </div>
       </div>
     </div>
 
@@ -126,11 +136,11 @@
 
     <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center py-3 gap-2">
       <div class="small text-muted" id="icaSumHint">
-        <i class="fa-solid fa-circle-info me-1 text-info"></i>
-        Tip: Existing entered marks are preserved whenever you keep or rename a component. If component totals differ from {{ mapping.subject.ica_max|int }}, consolidated ICA marks scale automatically to {{ mapping.subject.ica_max|int }}.
+        <i class="fa-solid fa-shield-halved me-1 text-primary"></i>
+        <b>Enforced Policy:</b> Total ICA components marks cannot cross the <b>ICA MAX of {{ mapping.subject.ica_max|int }}</b> fixed by the Administrator.
       </div>
       {% if not is_locked %}
-        <button type="submit" class="btn btn-primary-custom px-4">
+        <button type="submit" id="saveIcaBtn" class="btn btn-primary-custom px-4">
           <i class="fa-solid fa-check me-1"></i> Save ICA Distribution
         </button>
       {% endif %}
@@ -146,6 +156,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const addBtn = document.getElementById('addComponentBtn');
   const sumValEl = document.getElementById('icaSumVal');
   const sumBadge = document.getElementById('icaSumBadge');
+  const saveBtn = document.getElementById('saveIcaBtn');
+  const exceedAlert = document.getElementById('icaExceedAlert');
+  const exceedTotalVal = document.getElementById('exceedTotalVal');
+  const configForm = document.getElementById('icaConfigForm');
   const targetMax = parseFloat(document.getElementById('targetIcaMax').dataset.max) || 50;
   const types = ['Test', 'Quiz', 'Assignment', 'Mid-Term', 'Lab', 'Project', 'Presentation', 'Seminar', 'Attendance', 'ICA', 'Other'];
 
@@ -155,14 +169,63 @@ document.addEventListener('DOMContentLoaded', function () {
       const v = parseFloat(inp.value);
       if (!isNaN(v)) total += v;
     });
-    sumValEl.textContent = Number.isInteger(total) ? total : total.toFixed(1);
-    if (Math.abs(total - targetMax) < 0.01) {
-      sumBadge.className = 'badge bg-success-subtle text-success border border-success-subtle fs-6 px-3 py-1';
+    const totalDisplay = Number.isInteger(total) ? total : total.toFixed(1);
+    sumValEl.textContent = totalDisplay;
+
+    const diff = total - targetMax;
+
+    if (diff > 0.001) {
+      // Exceeds Admin ICA Max!
+      const overBy = Number.isInteger(diff) ? diff : diff.toFixed(1);
+      sumBadge.className = 'badge bg-danger text-white border border-danger fs-6 px-3 py-1 shadow-sm';
+      sumBadge.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-1"></i> Total ICA: <b>${totalDisplay}</b> / ${targetMax} (Exceeds by ${overBy})`;
+      
+      if (exceedAlert) {
+        exceedAlert.classList.remove('d-none');
+        if (exceedTotalVal) exceedTotalVal.textContent = totalDisplay;
+      }
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.classList.add('disabled');
+        saveBtn.title = `Total ICA marks (${totalDisplay}) cannot cross ICA MAX (${targetMax}) fixed by Administrator.`;
+      }
     } else {
-      sumBadge.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fs-6 px-3 py-1';
+      // Within allowed limit
+      if (exceedAlert) exceedAlert.classList.add('d-none');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('disabled');
+        saveBtn.title = '';
+      }
+
+      if (Math.abs(diff) <= 0.001) {
+        // Exactly matches targetMax (e.g. 50/50)
+        sumBadge.className = 'badge bg-success-subtle text-success border border-success-subtle fs-6 px-3 py-1';
+        sumBadge.innerHTML = `<i class="fa-solid fa-circle-check me-1"></i> Total ICA: <b>${totalDisplay}</b> / ${targetMax}`;
+      } else {
+        // Below targetMax (e.g. 40/50)
+        sumBadge.className = 'badge bg-info-subtle text-info border border-info-subtle fs-6 px-3 py-1';
+        sumBadge.innerHTML = `Total ICA: <b>${totalDisplay}</b> / ${targetMax}`;
+      }
     }
+
     tbody.querySelectorAll('.row-order').forEach((cell, idx) => {
       cell.textContent = idx + 1;
+    });
+  }
+
+  if (configForm) {
+    configForm.addEventListener('submit', function (e) {
+      let total = 0;
+      tbody.querySelectorAll('.comp-max-input').forEach(inp => {
+        const v = parseFloat(inp.value);
+        if (!isNaN(v)) total += v;
+      });
+      if (total > targetMax + 0.001) {
+        e.preventDefault();
+        alert(`Cannot save: Total ICA components marks (${total}) exceeds the ICA MAX (${targetMax}) fixed by the Administrator.`);
+        return false;
+      }
     });
   }
 
