@@ -202,3 +202,40 @@ CREATE INDEX IF NOT EXISTS idx_marks_student ON marks(student_id);
 CREATE INDEX IF NOT EXISTS idx_marks_assessment ON marks(assessment_id);
 CREATE INDEX IF NOT EXISTS idx_marks_mapping ON marks(mapping_id);
 CREATE INDEX IF NOT EXISTS idx_fsm_alloc ON faculty_subject_mapping(academic_year_id, programme_id, semester_id, section_id);
+
+-- ==============================================================================
+-- 15. Row-Level Security (RLS) & Protection
+-- Enforce RLS on all public tables to prevent unauthorized access via PostgREST
+-- ==============================================================================
+ALTER TABLE public.academic_years ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.programmes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.semesters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.faculty ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subjects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.student_enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.faculty_subject_mapping ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.assessments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.marks_audit ENABLE ROW LEVEL SECURITY;
+
+-- Explicitly deny direct public API access (PostgREST / anon).
+-- Privileged backend connections (postgres / service_role) bypass RLS automatically.
+DO $$
+DECLARE
+    tbl text;
+    tables text[] := ARRAY[
+        'academic_years', 'programmes', 'semesters', 'sections', 'faculty',
+        'users', 'subjects', 'students', 'student_enrollments', 'faculty_subject_mapping',
+        'assessments', 'marks', 'submissions', 'audit_logs', 'marks_audit'
+    ];
+BEGIN
+    FOREACH tbl IN ARRAY tables LOOP
+        EXECUTE format('DROP POLICY IF EXISTS "Deny direct public access" ON public.%I', tbl);
+        EXECUTE format('CREATE POLICY "Deny direct public access" ON public.%I FOR ALL TO public USING (false)', tbl);
+    END LOOP;
+END $$;
